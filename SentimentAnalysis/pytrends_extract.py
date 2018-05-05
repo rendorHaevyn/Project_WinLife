@@ -8,46 +8,67 @@ URL: https://github.com/GeneralMills/pytrends
 
 ## IMPORTS
 
+from __future__ import print_function
 from pytrends.request import TrendReq
 import pandas as pd
 import os
+from dateutil import rrule
+from datetime import datetime, timedelta
 
 ## CONSTANTS
-wkdir = 'C:\\Users\\Admin\\Documents\\GitHub\\Project_WinLife\\SentimentAnalysis\\pt_data'
+WKDIR           = 'C:\\Users\\Admin\\Documents\\GitHub\\Project_WinLife\\SentimentAnalysis\\pt_data'
+CATEGORY        = 107 # INVESTING
+PROPERTY        = 'news' # SET TO EMPTY, ELSE images, news, youtube or froogle
+GEOLOC          = '' # SET TO EMPTY, ELSE 2 LETTER COUNTRY ABBREVIATION
+NOW             = datetime.utcnow()
+#YR_BACK         = now - timedelta(weeks=1)
+YR_BACK         = NOW - timedelta(weeks=52)
+
 
 ## LOAD DATA
-os.chdir(wkdir)
-kw_df = pd.read_csv(wkdir + os.sep + 'kw.csv',delimiter='|')
+os.chdir(WKDIR)
+kw_df = pd.read_csv(WKDIR + os.sep + 'kw.csv',delimiter='|')
 
 
-## TODO 1. iterate years, months, days, hours for timeframe
-## TODO 2. iterate keyword lists 
-## TODO 3. generate interest-over-time overall table (8 minute intervals)
-## TODO 4. generate interest by region / city hourly table
+## TODO Parallel process pytrends calls
+## TODO re-cut interest by 8 minute intervals into interest by 15 minute intervals
+
 
 # Login to Google. Only need to run this once, the rest of requests will use the same session.
 pytrend = TrendReq()
 
+# Populate list of days in prior year    
+day_lst = list(rrule.rrule(rrule.DAILY, dtstart=YR_BACK, until=NOW))
+
 # Iterate keyword list by coin of interest
+df_consolidated = pd.DataFrame()
 for indx,vals in kw_df.iterrows():
-    print('Generating trends for {}.'.format(vals['coin']))
-    kw = vals['kw_lst']
+    #print('PyTrend for {}, using keys {}.'.format(vals['coin'],vals['kw_lst']))
+    kw = vals['kw_lst'].split(',')
+# Iterate days in period
+    df_trend = pd.DataFrame()
+    for i in range(len(day_lst)-1):
+        s_tf = day_lst[i].strftime("%Y-%m-%dT00") + ' ' + day_lst[i+1].strftime("%Y-%m-%dT00")
+        print('Fetching: coin - {}, day - {}'.format(vals['coin'],s_tf))
+        pytrend.build_payload(kw_list   = kw
+                            ,cat        = CATEGORY
+                            ,geo        = GEOLOC
+                            ,gprop      = PROPERTY
+                            ,timeframe  = s_tf
+                            )
+        iot_df = pytrend.interest_over_time()
+        iot_df = iot_df.drop(['isPartial'],axis=1)
+        df_trend = df_trend.append(iot_df)
+# Mergetime series pytrend data frames
+    df_consolidated = pd.concat([df_consolidated,df_trend], axis=1)
 
-## TODO - here, iterate hour/day/year and make call to def function to call / create tables.
+# Export file
+df_consolidated.to_csv(WKDIR + os.sep + 'coin_kw_trends.csv')
 
-# Create payload and capture API tokens. Only needed for interest_over_time(), interest_by_region() & related_queries()
-pytrend.build_payload(kw_list=kw
-                    ,cat=107
-                    ,geo=''
-                    ,timeframe='2017-12-01T00 2017-12-02T00'
-                    ,gprop='news'
-                    ) # cat = Investing
 
-# Interest Over Time
-iot_df = pytrend.interest_over_time() 
-print(iot_df.head())
 
 # Interest by Region
+"""
 ibr_df = pytrend.interest_by_region(resolution='CITY') #COUNTRY/CITY/DMA/REGION - 'REGION' seems to fail
 print(ibr_df.head())
 ibr_gt0 = ibr_df[(ibr_df['IOTA'] > 0) | 
@@ -55,20 +76,4 @@ ibr_gt0 = ibr_df[(ibr_df['IOTA'] > 0) |
                 (ibr_df['iota'] > 0)  |
                 (ibr_df['Iota'] > 0)
                 ]
-
-
-# Related Queries, returns a dictionary of dataframes
-related_queries_dict = pytrend.related_queries()
-print(related_queries_dict)
-
-# Get Google Hot Trends data
-trending_searches_df = pytrend.trending_searches()
-print(trending_searches_df.head())
-
-# Get Google Top Charts
-top_charts_df = pytrend.top_charts(cid='actors', date=201611)
-print(top_charts_df.head())
-
-# Get Google Keyword Suggestions
-suggestions_dict = pytrend.suggestions(keyword='pizza')
-print(suggestions_dict)
+"""
