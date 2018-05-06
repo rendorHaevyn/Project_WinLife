@@ -107,3 +107,9 @@ ibr_gt0 = ibr_df[(ibr_df['IOTA'] > 0) |
                 (ibr_df['Iota'] > 0)
                 ]
 """
+
+import string
+import random
+def random_word(length):
+    """Return a random word of 'length' letters."""
+    return ''.join(random.choice(string.ascii_letters) for i in range(length))

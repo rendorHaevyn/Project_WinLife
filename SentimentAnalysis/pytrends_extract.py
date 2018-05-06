@@ -21,8 +21,8 @@ CATEGORY        = 107 # INVESTING
 PROPERTY        = 'news' # SET TO EMPTY, ELSE images, news, youtube or froogle
 GEOLOC          = '' # SET TO EMPTY, ELSE 2 LETTER COUNTRY ABBREVIATION
 NOW             = datetime.utcnow()
-#YR_BACK         = now - timedelta(weeks=1)
-YR_BACK         = NOW - timedelta(weeks=52)
+YR_BACK         = now - timedelta(weeks=1)
+#YR_BACK         = NOW - timedelta(weeks=52)
 
 
 ## LOAD DATA
@@ -43,24 +43,25 @@ day_lst = list(rrule.rrule(rrule.DAILY, dtstart=YR_BACK, until=NOW))
 # Iterate keyword list by coin of interest
 df_consolidated = pd.DataFrame()
 for indx,vals in kw_df.iterrows():
-    #print('PyTrend for {}, using keys {}.'.format(vals['coin'],vals['kw_lst']))
-    kw = vals['kw_lst'].split(',')
-# Iterate days in period
-    df_trend = pd.DataFrame()
-    for i in range(len(day_lst)-1):
-        s_tf = day_lst[i].strftime("%Y-%m-%dT00") + ' ' + day_lst[i+1].strftime("%Y-%m-%dT00")
-        print('Fetching: coin - {}, day - {}'.format(vals['coin'],s_tf))
-        pytrend.build_payload(kw_list   = kw
-                            ,cat        = CATEGORY
-                            ,geo        = GEOLOC
-                            ,gprop      = PROPERTY
-                            ,timeframe  = s_tf
-                            )
-        iot_df = pytrend.interest_over_time()
-        iot_df = iot_df.drop(['isPartial'],axis=1)
-        df_trend = df_trend.append(iot_df)
-# Mergetime series pytrend data frames
-    df_consolidated = pd.concat([df_consolidated,df_trend], axis=1)
+    if indx == 0: # first coin only
+        #print('PyTrend for {}, using keys {}.'.format(vals['coin'],vals['kw_lst']))
+        kw = vals['kw_lst'].split(',')
+    # Iterate days in period
+        df_trend = pd.DataFrame()
+        for i in range(len(day_lst)-1):
+            s_tf = day_lst[i].strftime("%Y-%m-%dT00") + ' ' + day_lst[i+1].strftime("%Y-%m-%dT00")
+            print('Fetching: coin - {}, day - {}'.format(vals['coin'],s_tf))
+            pytrend.build_payload(kw_list   = kw
+                                ,cat        = CATEGORY
+                                ,geo        = GEOLOC
+                                ,gprop      = PROPERTY
+                                ,timeframe  = s_tf
+                                )
+            iot_df = pytrend.interest_over_time()
+            iot_df = iot_df.drop(['isPartial'],axis=1)
+            df_trend = df_trend.append(iot_df)
+    # Mergetime series pytrend data frames
+        df_consolidated = pd.concat([df_consolidated,df_trend], axis=1)
 
 # Export file
 df_consolidated.to_csv(WKDIR + os.sep + 'coin_kw_trends.csv')
