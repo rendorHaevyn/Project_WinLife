@@ -133,7 +133,7 @@ def Pytrends_daily(payload):
     return dailyData
 
 #Load the inputs 
-WKDIR           = 'C:\\Users\\Admin\\Documents\\GitHub\\Project_WinLife\\SentimentAnalysis\\pt_data'
+WKDIR           = 'C:\\Users\\Admin\\Documents\\GitHub\\Project_WinLife\\SentimentAnalysis\\Google_Trends\\pt_data'
 os.chdir(WKDIR)
 
 #Input=pd.read_excel('C:/Users/Jean-Baptiste/Google Drive/M2/GoogleTrendsData/google/Inputs.xlsx', na_values='NA')

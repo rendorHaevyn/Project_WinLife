@@ -20,12 +20,12 @@ from datetime import datetime, timedelta
 from threading import Thread
 import time
 
-sys.path.insert(0, "C:\\Users\\Admin\\Documents\\GitHub\\Project_WinLife\\SentimentAnalysis\\")
+sys.path.insert(0, "C:\\Users\\Admin\\Documents\\GitHub\\Project_WinLife\\SentimentAnalysis\\Google_Trends\\")
 import LogThread
 
 ## LOAD DATA
-OUTDIR           = 'C:\\Users\\Admin\\Documents\\GitHub\\Project_WinLife\\SentimentAnalysis\\pt_data'
-INDIR           = 'C:\\Users\\Admin\\Documents\\GitHub\\Project_WinLife\\SentimentAnalysis\\pt_inputs'
+OUTDIR           = 'C:\\Users\\Admin\\Documents\\GitHub\\Project_WinLife\\SentimentAnalysis\\Google_Trends\\pt_data'
+INDIR           = 'C:\\Users\\Admin\\Documents\\GitHub\\Project_WinLife\\SentimentAnalysis\\Google_Trends\\pt_inputs'
 os.chdir(OUTDIR)
 kw_df = pd.read_csv(INDIR + os.sep + 'kw.csv',delimiter='|')
 
