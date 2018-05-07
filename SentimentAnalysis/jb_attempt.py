@@ -1,6 +1,7 @@
 
 """
 https://github.com/jblemoine/Big_data_trading_algorithm/blob/master/Pytrends.ipynb
+http://docs.python-requests.org/en/master/user/advanced/#socks
 """
 
 ## BATCH QUERY
