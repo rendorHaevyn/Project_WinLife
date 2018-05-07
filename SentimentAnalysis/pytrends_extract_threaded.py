@@ -29,6 +29,10 @@ INDIR           = 'C:\\Users\\Admin\\Documents\\GitHub\\Project_WinLife\\Sentime
 os.chdir(OUTDIR)
 kw_df = pd.read_csv(INDIR + os.sep + 'kw.csv',delimiter='|')
 
+## HACK FOR GOOGLE 429 ERRORS
+GGL_HACK        = 1
+
+
 ## CONSTANTS
 CATEGORY        = 107 # INVESTING
 PROPERTY        = 'news' # SET TO EMPTY, ELSE images, news, youtube or froogle
@@ -72,8 +76,8 @@ df_consolidated = pd.DataFrame()
 for indx,vals in kw_df.iterrows():
 #    if indx >= 2:
 #        break
-    if indx > 0:
-        for i in range(10): # Restriction to usurp getting google 429 error - too-many-requests
+    if indx > 0 and GGL_HACK == 1: # Restriction to usurp getting google 429 error - too-many-requests
+        for i in range(10): 
             sys.stdout.write('Sleeping for next coin - {} of 30\r'.format(i))
             time.sleep(1)
             sys.stdout.flush()
@@ -82,7 +86,8 @@ for indx,vals in kw_df.iterrows():
     # Iterate days in period
         coin_trends[indx] = pd.DataFrame()
         for i in range(DAY_CNT):
-            time.sleep(2) # Restriction to usurp getting google 429 error - too-many-requests
+            if  GGL_HACK == 1:  # Restriction to usurp getting google 429 error - too-many-requests
+                time.sleep(2)
             threads[i] = Thread(target=get_trend, args=(i,results,vals['coin']))
             threads[i].start()        
         for i in range(DAY_CNT):
