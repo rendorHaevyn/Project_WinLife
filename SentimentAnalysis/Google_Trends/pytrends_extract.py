@@ -16,22 +16,21 @@ from dateutil import rrule
 from datetime import datetime, timedelta
 
 ## CONSTANTS
-WKDIR           = 'C:\\Users\\Admin\\Documents\\GitHub\\Project_WinLife\\SentimentAnalysis\\Google_Trends\\pt_data'
-CATEGORY        = 107 # INVESTING
-PROPERTY        = 'news' # SET TO EMPTY, ELSE images, news, youtube or froogle
+INDIR           = 'C:\\Users\\Admin\\Documents\\GitHub\\Project_WinLife\\SentimentAnalysis\\Google_Trends\\pt_inputs'
+OUTDIR          = 'C:\\Users\\Admin\\Documents\\GitHub\\Project_WinLife\\SentimentAnalysis\\Google_Trends\\pt_data'
+CATEGORY        = 0 # 107 = INVESTING, 0 = everything
+PROPERTY        = '' # SET TO EMPTY, ELSE images, news, youtube or froogle
 GEOLOC          = '' # SET TO EMPTY, ELSE 2 LETTER COUNTRY ABBREVIATION
 NOW             = datetime.utcnow()
-YR_BACK         = now - timedelta(weeks=1)
+YR_BACK         = NOW - timedelta(weeks=12)
+S_TF            = 'today 3-m' # 3 months back
+IOT_TYPE        = 'daily' # 'minute' for 8-minute daily extract or 'daily' for daily monthly extract
 #YR_BACK         = NOW - timedelta(weeks=52)
 
 
 ## LOAD DATA
-os.chdir(WKDIR)
-kw_df = pd.read_csv(WKDIR + os.sep + 'kw.csv',delimiter='|')
-
-
-## TODO Parallel process pytrends calls
-## TODO re-cut interest by 8 minute intervals into interest by 15 minute intervals
+os.chdir(OUTDIR)
+kw_df = pd.read_csv(INDIR + os.sep + 'kw.csv',delimiter='|')
 
 
 # Login to Google. Only need to run this once, the rest of requests will use the same session.
@@ -43,10 +42,9 @@ day_lst = list(rrule.rrule(rrule.DAILY, dtstart=YR_BACK, until=NOW))
 # Iterate keyword list by coin of interest
 df_consolidated = pd.DataFrame()
 for indx,vals in kw_df.iterrows():
-    if indx == 0: # first coin only
-        #print('PyTrend for {}, using keys {}.'.format(vals['coin'],vals['kw_lst']))
-        kw = vals['kw_lst'].split(',')
-    # Iterate days in period
+    #print('PyTrend for {}, using keys {}.'.format(vals['coin'],vals['kw_lst']))
+    kw = vals['kw_lst'].split(',')
+    if IOT_TYPE == 'minute': # iterate days for minute data
         df_trend = pd.DataFrame()
         for i in range(len(day_lst)-1):
             s_tf = day_lst[i].strftime("%Y-%m-%dT00") + ' ' + day_lst[i+1].strftime("%Y-%m-%dT00")
@@ -60,11 +58,23 @@ for indx,vals in kw_df.iterrows():
             iot_df = pytrend.interest_over_time()
             iot_df = iot_df.drop(['isPartial'],axis=1)
             df_trend = df_trend.append(iot_df)
+    else: # iterate months for daily data
+        df_trend = pd.DataFrame()
+        print('Fetching: coin - {}, day - {}'.format(vals['coin'],S_TF))
+        pytrend.build_payload(kw_list   = kw
+                            ,cat        = CATEGORY
+                            ,geo        = GEOLOC
+                            ,gprop      = PROPERTY
+                            ,timeframe  = S_TF
+                            )
+        iot_df = pytrend.interest_over_time()
+        iot_df = iot_df.drop(['isPartial'],axis=1)
+        df_trend = df_trend.append(iot_df)        
     # Mergetime series pytrend data frames
-        df_consolidated = pd.concat([df_consolidated,df_trend], axis=1)
+    df_consolidated = pd.concat([df_consolidated,df_trend], axis=1)
 
 # Export file
-df_consolidated.to_csv(WKDIR + os.sep + 'coin_kw_trends.csv')
+df_consolidated.to_csv(OUTDIR + os.sep + 'coin_kw_trends_monthly_{}.csv'.format(datetime.utcnow().strftime('%d%Y')))
 
 
 
