@@ -30,9 +30,9 @@ def ExtractData(N_LAGS=5):
     for T in ALL_TICKERS:
         tickers.append((T, T[:T.index("_")], T[T.index("_")+1:], 1 if "USDT" in T else 0))
 
-    coin_list = pd.DataFrame(tickers)
-    coin_list.columns = ['Pair', 'Base','Coin', 'Extract']
-    coin_list.to_csv("coins.csv", index=False)
+    #coin_list = pd.DataFrame(tickers)
+    #coin_list.columns = ['Pair', 'Base','Coin', 'Extract']
+    #coin_list.to_csv("coins.csv", index=False)
 
     tm = time.time()
 
