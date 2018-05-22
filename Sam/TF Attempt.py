@@ -3,8 +3,15 @@ import random
 import pandas as pd
 import sklearn
 import math
+import time
 from matplotlib import pyplot as plt
 import tensorflow as tf
+
+# Goal: Create a NN that uses softmax to determine the weights to assign to assets
+#       y, y2, y3. y is +-1 depending on x. The NN should learn that if x > 0.5, then
+#       all the weight should go to y (reward=1), 
+#       otherwise all the weight should go to y2 or y3 since reward for y = -1 if
+#       x <= 0.5
 
 data_points = []
 N = 10000
@@ -14,29 +21,29 @@ random.seed(1)
 #---------------------------------
 for i in range(N):
     
-    x = random.random()
-    y = 1 if x > 0.5 else -1
-    y2 = 0.01 * (random.random()-0.5)
-    y3 = 0.01 * (random.random()-0.5)
+    x = random.random()               # Random Number - Our only input variable
+    y = 1 if x > 0.5 else -1          # Huge reward, completely dependent on x
+    y2 = 0.01 * (random.random()-0.5) # Negligible Reward 1
+    y3 = 0.01 * (random.random()-0.5) # Negligible Reward 2
     
     data_points.append( (x, y, y2, y3) )
 #---------------------------------
     
+# Create Dataframe of data
 data = pd.DataFrame(data_points, columns=['x', 'y', 'y2', 'y3'])
-#data = test_df[X_cols+Y_cols]
-#data.columns = ['x', 'y', 'y2', 'y3']
+
 data = data.reset_index(drop=True)
 
-ys = ['y','y2','y3']
+ys = ['y','y2']
 
-plt.plot(data.x, data.y, 'ob')
+plt.plot(data.x, data.y, 'ob') # Plot step
 
 X = tf.placeholder(tf.float32, [None, 1])
-X = tf.reshape(X, [-1, 1])
+X = tf.reshape(X, [-1, 1]) # I don't know why but it doesnt work without this reshape
 
 # Define number of Neurons per layer
 K        = 15 # Layer 1
-L        = 5 # Layer 2
+L        = 5  # Layer 2
 N_INPUT  = 1
 N_OUTPUT = len(ys)
 
@@ -58,22 +65,20 @@ B3 = tf.Variable(tf.zeros([N_OUTPUT]))
 # Activation function for final layer is Softmax for probabilties in the range [0,1]
 Y1 = tf.nn.relu(tf.matmul(X,  W1) + B1)
 Y2 = tf.nn.relu(tf.matmul(Y1, W2) + B2)
-Y  = tf.nn.tanh(tf.matmul(Y2, W3) + B3)
+Y  = tf.nn.softmax(tf.matmul(Y2, W3) + B3) # Softmax activation
 
 Y_ = tf.placeholder(tf.float32, [None, N_OUTPUT])
 
-init = tf.initialize_all_variables()
+init = tf.global_variables_initializer()
 
 # Loss Function
 # : reduce_sum just sums up the vector 
-#loss = tf.reduce_sum((Y - Y_)**2)
-#loss = tf.losses.mean_squared_error(Y_, Y)
 #loss = tf.reduce_mean((Y - Y_)**2)
-loss = tf.reduce_mean((Y - Y_)**2)
+# Y is the predicted weights from softmax. Y_ is the reward. Multiplying them together
+# gives you the expected reward...in theory.
+loss = -tf.reduce_sum( Y * Y_ )
 
-#def loss_f(lab, pred):
-#    return tf.reduce_mean((lab-pred)**2)
-
+# Learning Rate
 LR = 0.01
 optimizer 		= tf.train.GradientDescentOptimizer(LR)
 train_step        = optimizer.minimize(loss)
@@ -83,32 +88,47 @@ sess.run(init)
 
 errs = []
 
-shp_x = np.reshape(data.x, (-1, N_INPUT))
-shp_y = np.reshape(data[ys], (-1, N_OUTPUT))
+shp_x = np.reshape(data.x, (-1, N_INPUT))       # Input data
+shp_y = np.reshape(data[ys], (-1, N_OUTPUT))    # Output 'Labels'
 
 t_1 = time.time()
 
 for i in range(100000):
-       
-    #idx1 = random.randint(0, len(shp_x-1-batch_size))
-    #b_x = shp_x[idx1:(idx1+batch_size)]
-    #b_y = shp_y[idx1:(idx1+batch_size)]
-    #batch = data.sample(500)
-    batch = data
-    #batch = data
+    
     train_data = {X: shp_x, Y_: shp_y}
-    #train_data = {X: np.reshape(batch.x, (-1, N_INPUT)), Y_: np.reshape(batch[ys], (-1,N_OUTPUT))}
     sess.run(train_step, feed_dict=train_data)
-    #pred, real, error = sess.run([Y, Y_, loss], feed_dict = train_data)
+    
     if i % 100 == 0:
-        train_data = {X: shp_x, Y_: shp_y}
         pred, real, error = sess.run([Y, Y_, loss], feed_dict = train_data)
         errs.append(error)
-        print(errs[-1], 1*0.999**i, i / (time.time() - t_1))
+        print("Iteration: {:<10.0f} Loss = {:<16.6f}".format(i, errs[-1]))
 
 plt.plot(errs)
 
 y1, y2 = sess.run([Y, Y_], feed_dict = train_data)
 plt.plot(y1)
+
+# A rule based design would produce this output
+desired_loss = -sum(data.y[data.y==1])
+
+# if learning properly, the first column of y1 should alternate between 1 and 0,
+# depending purely on the value of x. The loss function should equal to the negative sum
+# of the occurance of +1s in the data. A rule based engine would apply the simple logic:
     
-#plt.plot(prof)
+# if x > 0.5, w = [1, 0, 0]
+# else        w = [0, a, b] where a + b = 1
+
+rule_based_loss = 0
+for i in range(len(data)):
+    observation = data.iloc[i,:]
+    if observation.x > 0.5:
+        weights = [1, 0, 0]
+    else:
+        rands = [random.random() for _ in range(2)]
+        rands = [x/sum(rands) for x in rands]
+        weights = [0, random.random(), rands[0], rands[1]]
+    rule_based_loss += weights[0] * observation.y
+    rule_based_loss += weights[1] * observation.y2
+    rule_based_loss += weights[2] * observation.y3
+
+print(-rule_based_loss)
