@@ -93,7 +93,7 @@ shp_y = np.reshape(data[ys], (-1, N_OUTPUT))    # Output 'Labels'
 
 t_1 = time.time()
 
-for i in range(100000):
+for i in range(10000):
     
     train_data = {X: shp_x, Y_: shp_y}
     sess.run(train_step, feed_dict=train_data)
