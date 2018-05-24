@@ -16,13 +16,13 @@ data.drop('date', axis=1, inplace=True)
 data = data[int(len(data)*0.2):len(data)].reset_index(drop=True)
 
 INCLUDE_VOLUME = True
-ALLOW_SHORTS   = True
+ALLOW_SHORTS   = False
 DISCOUNT       = True
 DISCOUNT_STEPS = 4
 GAMMA          = 0.6
 
 ASSETS      = ['USD', 'BTC', 'ETH', 'BCH']
-ASSETS2     = ['BTC', 'BCH', 'ETH']
+INPUT_ASSET = ['BTC', 'BCH', 'ETH']
 N_LAGS      = 10
 N_VEC       = 3 + 1 if INCLUDE_VOLUME else 0
 N_ASSETS    = ( len(ASSETS) * 2 - 1 ) if ALLOW_SHORTS else len(ASSETS)
@@ -32,11 +32,14 @@ N_ASSETS    = ( len(ASSETS) * 2 - 1 ) if ALLOW_SHORTS else len(ASSETS)
 
 cols = []
 for c in data.columns:
-    for a in ASSETS:
-        if a in c:
-            cols.append(c)
-            break
-        
+    if not ASSETS:
+        cols.append(c)
+    else:
+        for a in ASSETS:
+            if a in c:
+                cols.append(c)
+                break
+            
 if ALLOW_SHORTS:
     short_cols = []
     for c in cols:
@@ -47,17 +50,17 @@ if ALLOW_SHORTS:
         
 cols2 = []
 for c in data.columns:
-    if not ASSETS2:
+    if not INPUT_ASSET:
         cols2.append(c)
     else:
-        for a in ASSETS2:
+        for a in INPUT_ASSET:
             if a in c:
                 cols2.append(c)
                 break
         
 data['reward_USD'] = 0
-data['reward_BCH'] = data['reward_BCH'] - 0.001
-data['reward_BCH_S'] = data['reward_BCH_S'] - 0.001
+#data['reward_BCH'] = data['reward_BCH'] - 0.001
+#data['reward_BCH_S'] = data['reward_BCH_S'] - 0.001
 
 if INCLUDE_VOLUME:
     X_cols = [x for x in cols2 if 'L_' in x or "M_" in x]
