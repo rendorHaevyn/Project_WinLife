@@ -15,14 +15,14 @@ data = pd.read_csv("M15/ALL.csv").dropna(axis=0, how='any').reset_index(drop=Tru
 data.drop('date', axis=1, inplace=True)
 data = data[int(len(data)*0.2):len(data)].reset_index(drop=True)
 
-INCLUDE_VOLUME = True
+INCLUDE_VOLUME = False
 ALLOW_SHORTS   = False
-DISCOUNT       = True
+DISCOUNT       = False
 DISCOUNT_STEPS = 4
 GAMMA          = 0.6
 
-ASSETS      = ['USD', 'BTC', 'ETH', 'BCH']
-INPUT_ASSET = ['BTC', 'BCH', 'ETH']
+ASSETS      = []#['USD', 'BTC', 'ETH', 'BCH']
+INPUT_ASSET = []#['BTC', 'BCH', 'ETH']
 N_LAGS      = 10
 N_VEC       = 3 + 1 if INCLUDE_VOLUME else 0
 N_ASSETS    = ( len(ASSETS) * 2 - 1 ) if ALLOW_SHORTS else len(ASSETS)
@@ -68,13 +68,17 @@ else:
     X_cols = [x for x in cols2 if ('L_' in x and "VOLUME" not in x) or "M_" in x]
 Y_cols = ["reward_USD"] + [y for y in cols if 'reward' in y and "USD" not in y]
 
-stmt = "data[Y_cols] = data[Y_cols]"
-for ahead in range(1,DISCOUNT_STEPS+1):
-    stmt += "+(GAMMA**{}) * data[Y_cols].shift({})".format(ahead, -ahead)
-
 data_imm = data.copy()
+
 if DISCOUNT:
+    stmt = "data[Y_cols] = data[Y_cols]"
+    for ahead in range(1,DISCOUNT_STEPS+1):
+        stmt += "+(GAMMA**{}) * data[Y_cols].shift({})".format(ahead, -ahead)
     exec(stmt)
+
+
+
+
 
 data = data.dropna(axis=0, how='any').reset_index(drop=True)
 
@@ -92,11 +96,9 @@ for x in X_cols:
     data_imm[x] = data_imm[x].apply(lambda x : 0 if np.isinf(x) else x)
     data_imm[x] = (data_imm[x] - data_imm[x].describe()[1])/(data_imm[x].describe()[2]+1e-10)
 
-N_X = len(ASSETS2) - 1
 
-N_IN  = N_LAGS*N_VEC*N_X + N_ASSETS
 N_IN  = len(X_cols)
-N_OUT = (2 * len(ASSETS) - 1) if ALLOW_SHORTS else len(ASSETS)
+N_OUT = len(Y_cols)
 
 # Define number of Neurons per layer
 K = 80 # Layer 1
@@ -123,7 +125,6 @@ B3 = tf.Variable(tf.random_normal([M]))
 W4 = tf.Variable(tf.random_normal([M, N_OUT], stddev = SDEV))
 B4 = tf.Variable(tf.random_normal([N_OUT]))
 
-#X = tf.placeholder(tf.float32, [None, N_LAGS, N_VEC, N_X, len(ASSETS)])
 X = tf.placeholder(tf.float32, [None, N_IN])
 X = tf.reshape(X, [-1, N_IN])
 
