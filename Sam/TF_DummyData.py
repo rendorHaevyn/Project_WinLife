@@ -36,6 +36,8 @@ data = data.reset_index(drop=True)
 ys = ['y1','y2', 'y3']
 
 plt.plot(data.x, data.y1, 'ob') # Plot step
+plt.xlabel("x")
+plt.ylabel("y1")
 plt.show()
 
 X = tf.placeholder(tf.float32, [None, 1])
@@ -82,8 +84,8 @@ neg_reward = -tf.reduce_sum( Y * Y_ )
 
 # Learning Rate
 LR = 0.01
-optimizer 		= tf.train.GradientDescentOptimizer(LR)
-train_step        = optimizer.minimize(neg_reward)
+optimizer  = tf.train.GradientDescentOptimizer(LR)
+train_step = optimizer.minimize(neg_reward)
 
 init = tf.global_variables_initializer()
 sess = tf.Session()
@@ -135,12 +137,20 @@ for i in range(N_ITERATIONS):
         
 #---------------------------------------------------------------------------
 
-plt.plot(training_rewards[100:])
+plt.plot(training_rewards,label="Training reward")
+plt.axhline(y=perfect_reward,color='r',label="Perfect reward")
+plt.xlabel("Iterations (nx100)")
+plt.ylim((perfect_reward-100,0))
+plt.legend()
 plt.show()
 
 train_data = {X: shp_x, Y_: shp_y}
 yhat, y_real = sess.run([Y, Y_], feed_dict = train_data)
-plt.plot(yhat)
+plt.title("Predicted weights for y1, y2, y3")
+plt.plot(yhat[:,0],label="y1")
+plt.plot(yhat[:,1],label="y2")
+plt.plot(yhat[:,2],label="y3")
+plt.legend()
 plt.show()
 
 # if learning properly, the first column of y1 should alternate between 1 and 0,
