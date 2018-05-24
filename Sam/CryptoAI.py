@@ -21,7 +21,7 @@ DISCOUNT       = False
 DISCOUNT_STEPS = 4
 GAMMA          = 0.6
 
-ASSETS      = []#['USD', 'BTC', 'ETH', 'BCH']
+ASSETS      = ['USD', 'BTC', 'ETH', 'BCH', 'XRP', 'DASH', 'XMR', 'ZEC', 'LTC', 'LTC']
 INPUT_ASSET = []#['BTC', 'BCH', 'ETH']
 N_LAGS      = 10
 N_VEC       = 3 + 1 if INCLUDE_VOLUME else 0
@@ -128,7 +128,7 @@ Y =  tf.nn.softmax(tf.matmul(Y3, W4) + B4)
 # Placeholder for correct answers, digit recognition so theres 10 output probabilities
 Y_ = tf.placeholder(tf.float32, [None, N_OUT])
 
-loss = -tf.reduce_sum( (Y * Y_) )
+loss = -tf.reduce_mean( (Y * Y_) )
 
 # Optimizer
 LEARNING_RATE 	= 0.00001
@@ -136,8 +136,8 @@ optimizer 		= tf.train.AdamOptimizer(LEARNING_RATE)
 train_step 		= optimizer.minimize(loss)
 
 
-BATCH_SZ_MIN = 30#round(0.05*len(data))
-BATCH_SZ_MAX = 150#round(0.2*len(data))
+BATCH_SZ_MIN = 15#round(0.05*len(data))
+BATCH_SZ_MAX = 30#round(0.2*len(data))
 TEST_LEN     = round(0.15*len(data))
 IDX_MAX      = len(data) - TEST_LEN - BATCH_SZ_MAX - 1
 
