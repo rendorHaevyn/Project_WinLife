@@ -13,11 +13,11 @@ random.seed(1)
 
 data = pd.read_csv("M15/ALL.csv").dropna(axis=0, how='any').reset_index(drop=True)
 data.drop('date', axis=1, inplace=True)
-data = data[int(len(data)*0.2):len(data)].reset_index(drop=True)
+data = data[int(len(data)*0.3):len(data)].reset_index(drop=True)
 
 INCLUDE_VOLUME = True
 ALLOW_SHORTS   = False
-DISCOUNT       = False
+DISCOUNT       = True
 DISCOUNT_STEPS = 4
 GAMMA          = 0.6
 
@@ -128,16 +128,16 @@ Y =  tf.nn.softmax(tf.matmul(Y3, W4) + B4)
 # Placeholder for correct answers, digit recognition so theres 10 output probabilities
 Y_ = tf.placeholder(tf.float32, [None, N_OUT])
 
-loss = -tf.reduce_mean( (Y * Y_) )
+loss = -tf.reduce_mean( 10000 * (Y * Y_) )
 
 # Optimizer
-LEARNING_RATE 	= 0.00001
+LEARNING_RATE 	= 0.00002
 optimizer 		= tf.train.AdamOptimizer(LEARNING_RATE)
 train_step 		= optimizer.minimize(loss)
 
 
-BATCH_SZ_MIN = 15#round(0.05*len(data))
-BATCH_SZ_MAX = 30#round(0.2*len(data))
+BATCH_SZ_MIN = 100#round(0.05*len(data))
+BATCH_SZ_MAX = 400#round(0.2*len(data))
 TEST_LEN     = round(0.15*len(data))
 IDX_MAX      = len(data) - TEST_LEN - BATCH_SZ_MAX - 1
 
@@ -173,7 +173,7 @@ def eval_nn(lst, feed):
 
 for i in range(1000000):
     
-    if i % 50 == 0:
+    if i % 100 == 0:
         
         threading.Thread(target=eval_nn,args=(dat_rwds,feed_dat)).start()
         threading.Thread(target=eval_nn,args=(imm_rwds,feed_imm)).start()
@@ -229,7 +229,7 @@ for val in y1:
     else:
         long_short[1].append(sum(val[1:]))
 
-rolling_window = 5
+rolling_window = 25
 for i in range(len(long_short)):
     dat = pd.rolling_mean(pd.Series(long_short[i]),rolling_window)
     plt.plot(dat)
@@ -239,5 +239,5 @@ plt.show()
 for i in range(len(props)):
     dat = pd.rolling_mean(pd.Series(props[i]),rolling_window)
     plt.plot(dat)
-plt.legend([x[x.index("_")+1:] for x in COLS_Y])
+#plt.legend([x[x.index("_")+1:] for x in COLS_Y])
 plt.show()
