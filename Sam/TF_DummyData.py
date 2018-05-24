@@ -21,7 +21,7 @@ random.seed(1)
 for i in range(N):
     
     x = random.random()               # Random Number - Our only input variable
-    y1 = 1 if x > 0.5 else -1          # Huge reward, completely dependent on x
+    y1 = 1 if x > 0.5 else -1         # Huge reward, completely dependent on x
     y2 = 0.01 * (random.random()-0.5) # Negligible Reward 1
     y3 = -y2
     
@@ -30,21 +30,20 @@ for i in range(N):
     
 # Create Dataframe of data
 data = pd.DataFrame(data_points, columns=['x', 'y1', 'y2', 'y3'])
+data['x'] = (data['x'] - data['x'].describe()[1])/(data['x'].describe()[2])
 data = data.sort_values('x')
 data = data.reset_index(drop=True)
 
 ys = ['y1','y2', 'y3']
 
 plt.plot(data.x, data.y1, 'ob') # Plot step
-plt.xlabel("x")
-plt.ylabel("y1")
 plt.show()
 
 X = tf.placeholder(tf.float32, [None, 1])
 X = tf.reshape(X, [-1, 1]) # I don't know why but it doesnt work without this reshape
 
 # Define number of Neurons per layer
-K        = 20 # Layer 1
+K        = 20  # Layer 1
 L        = 10  # Layer 2
 N_INPUT  = 1
 N_OUTPUT = len(ys)
@@ -52,19 +51,22 @@ N_OUTPUT = len(ys)
 shp_x = np.reshape(data.x, (-1, N_INPUT))       # Input data
 shp_y = np.reshape(data[ys], (-1, N_OUTPUT))    # Output 'Labels
 
+                   
+SDEV = 5
+
 # LAYER 1
 # Initialize weights, normal dist.
-W1 = tf.Variable(tf.truncated_normal([N_INPUT, K], stddev = 0.1))
+W1 = tf.Variable(tf.random_normal([N_INPUT, K], stddev = SDEV))
 # Bias terms initialized to zero
-B1 = tf.Variable(tf.zeros([K]))
+B1 = tf.Variable(tf.random_normal([K]))
 
 # LAYER 2
-W2 = tf.Variable(tf.truncated_normal([K, L], stddev = 0.1))
-B2 = tf.Variable(tf.zeros([L]))
+W2 = tf.Variable(tf.random_normal([K, L], stddev = SDEV))
+B2 = tf.Variable(tf.random_normal([L]))
 
 # LAYER 3
-W3 = tf.Variable(tf.truncated_normal([L, N_OUTPUT], stddev = 0.1))
-B3 = tf.Variable(tf.zeros([N_OUTPUT]))
+W3 = tf.Variable(tf.random_normal([L, N_OUTPUT], stddev = SDEV))
+B3 = tf.Variable(tf.random_normal([N_OUTPUT]))
 
 # Feed forward. Output of previous is input to next
 # Activation function for final layer is Softmax for probabilties in the range [0,1]
@@ -83,9 +85,9 @@ Y_ = tf.placeholder(tf.float32, [None, N_OUTPUT])
 neg_reward = -tf.reduce_sum( Y * Y_ )
 
 # Learning Rate
-LR = 0.01
-optimizer  = tf.train.GradientDescentOptimizer(LR)
-train_step = optimizer.minimize(neg_reward)
+LR = 0.0001
+optimizer 		= tf.train.AdamOptimizer(LR)
+train_step        = optimizer.minimize(neg_reward)
 
 init = tf.global_variables_initializer()
 sess = tf.Session()
@@ -95,10 +97,10 @@ init_rewards = []
 while True:
     
     sess.run(init)
-    init_rewards.append(sess.run([neg_reward], 
-                                  feed_dict={X: shp_x, Y_: shp_y})[0])
+    init_rewards.append(-sess.run(neg_reward, 
+                                  feed_dict={X: shp_x, Y_: shp_y}))
     if len(init_rewards) > 100:
-        if init_rewards[-1] < pd.Series(init_rewards).describe()[4]:
+        if init_rewards[-1] >= pd.Series(init_rewards).describe()[6]:
             break
         
 plt.plot(init_rewards)
@@ -108,8 +110,8 @@ plt.show()
 perfect_reward = -sum(data.y1[data.y1==1])
 
 use_mini_batch   = True
-min_batch_sz     = 1
-max_batch_sz     = 5
+min_batch_sz     = 100
+max_batch_sz     = 500
 training_rewards = []
 N_ITERATIONS     = 20000
 
@@ -137,20 +139,12 @@ for i in range(N_ITERATIONS):
         
 #---------------------------------------------------------------------------
 
-plt.plot(training_rewards,label="Training reward")
-plt.axhline(y=perfect_reward,color='r',label="Perfect reward")
-plt.xlabel("Iterations (nx100)")
-plt.ylim((perfect_reward-100,0))
-plt.legend()
+plt.plot(training_rewards[:])
 plt.show()
 
 train_data = {X: shp_x, Y_: shp_y}
 yhat, y_real = sess.run([Y, Y_], feed_dict = train_data)
-plt.title("Predicted weights for y1, y2, y3")
-plt.plot(yhat[:,0],label="y1")
-plt.plot(yhat[:,1],label="y2")
-plt.plot(yhat[:,2],label="y3")
-plt.legend()
+plt.plot(yhat)
 plt.show()
 
 # if learning properly, the first column of y1 should alternate between 1 and 0,
