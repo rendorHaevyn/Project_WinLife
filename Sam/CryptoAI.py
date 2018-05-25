@@ -9,8 +9,6 @@ from matplotlib import pyplot as plt
 import tensorflow as tf
 import re
 
-random.seed(1)
-
 print("Loading Data...", end="")
 data_raw = pd.read_csv("M5/ALL.csv").dropna(axis=0, how='any').reset_index(drop=True)
 data = data_raw.drop('date', axis=1)
@@ -20,11 +18,10 @@ data = data[int(len(data)*0.2):len(data)].reset_index(drop=True)
 INCLUDE_VOLUME = True
 ALLOW_SHORTS   = False
 DISCOUNT       = True
-DISCOUNT_STEPS = 24
-GAMMA          = 0.95
+DISCOUNT_STEPS = 48
+GAMMA          = 0.85
 
-
-ASSETS      = ['USD', 'BTC', 'ETH', 'BCH', 'XRP', 'XMR', 'ZEC', 'LTC']
+ASSETS      = ['USD', 'BCH', 'XRP', 'XMR', 'ZEC', 'LTC']
 INPUT_ASSET = ['BTC', 'BCH', 'ETH', 'BCH', 'XRP', 'XMR', 'ZEC', 'LTC']
 N_VEC       = 3 + 1 if INCLUDE_VOLUME else 0
 N_ASSETS    = ( len(ASSETS) * 2 - 1 ) if ALLOW_SHORTS else len(ASSETS)
@@ -38,7 +35,7 @@ cols2 = []
 for c in data.columns:
     if not INPUT_ASSET:
         cols2.append(c)
-        if "reward" in c:
+        if "L_" in c:
             stmt += "+data['{}']".format(c)
             n_rws += 1
     else:
@@ -74,9 +71,9 @@ data['reward_USD'] = 0
 #data['reward_BCH_S'] = data['reward_BCH_S'] - 0.001
 
 if INCLUDE_VOLUME:
-    COLS_X = [x for x in cols2 if 'L_' in x or "M_" in x or x == 'market_rwd']
+    COLS_X = [x for x in cols2 if 'L_' in x or "M_" in x]
 else:
-    COLS_X = [x for x in cols2 if ('L_' in x and "VOLUME" not in x) or "M_" in x or x == 'market_rwd']
+    COLS_X = [x for x in cols2 if ('L_' in x and "VOLUME" not in x) or "M_" in x]
 COLS_Y = ["reward_USD"] + [y for y in cols if 'reward' in y and "USD" not in y]
 
 if DISCOUNT:
@@ -106,10 +103,10 @@ N_IN  = len(COLS_X)
 N_OUT = len(COLS_Y)
 
 # Define number of Neurons per layer
-K = 700 # Layer 1
-L = 600  # Layer 2
-M = 500  # Layer 3
-N = 400  # Layer 4
+K = 300 # Layer 1
+L = 300  # Layer 2
+M = 300  # Layer 3
+N = 300  # Layer 4
 O = 300  # Layer 5
 
 SDEV = 0.1
@@ -145,10 +142,10 @@ X = tf.reshape(X, [-1, N_IN])
 
 # Feed forward. Output of previous is input to next
 # Activation function for final layer is Softmax for probabilties in the range [0,1]
-Y1 = tf.nn.leaky_relu(tf.matmul(X,  W1) + B1)
-Y2 = tf.nn.leaky_relu(tf.matmul(Y1, W2) + B2)
-Y3 = tf.nn.leaky_relu(tf.matmul(Y2, W3) + B3)
-Y4 = tf.nn.leaky_relu(tf.matmul(Y3, W4) + B4)
+Y1 = tf.nn.relu(tf.matmul(X,  W1) + B1)
+Y2 = tf.nn.relu(tf.matmul(Y1, W2) + B2)
+Y3 = tf.nn.relu(tf.matmul(Y2, W3) + B3)
+Y4 = tf.nn.relu(tf.matmul(Y3, W4) + B4)
 #Y5 = tf.nn.leaky_relu(tf.matmul(Y4, W5) + B5)
 Y =  tf.nn.softmax(tf.matmul(Y4, W5) + B5)
 #Y  = (tf.matmul(Y4, W5) + B5)
@@ -159,12 +156,12 @@ Y_ = tf.placeholder(tf.float32, [None, N_OUT])
 loss = -tf.reduce_mean( 10000000 * (Y * Y_) )
 
 # Optimizer
-LEARNING_RATE 	= 0.00001
+LEARNING_RATE 	= 0.0002
 optimizer 		= tf.train.AdamOptimizer(LEARNING_RATE)
 train_step 		= optimizer.minimize(loss)
 
-BATCH_SZ_MIN = 4#round(0.05*len(data))
-BATCH_SZ_MAX = 24#round(0.2*len(data))
+BATCH_SZ_MIN = 80#round(0.05*len(data))
+BATCH_SZ_MAX = 480#round(0.2*len(data))
 TEST_LEN     = round(0.2*len(data))
 IDX_MAX      = len(data) - TEST_LEN - BATCH_SZ_MAX - 1
 
@@ -185,15 +182,28 @@ init_rewards = []
 while True:
     
     sess.run(init)
+    for i in range(10):
+
+        idx      = round(random.random()**0.75*IDX_MAX)
+        batch_sz = random.randint(BATCH_SZ_MIN, BATCH_SZ_MAX)
+        sub_data = data.iloc[idx:idx+batch_sz, :].reset_index(drop=True)
+        sub_data = data.iloc[:IDX_MAX,:].sample(batch_sz)
+        batch_X, batch_Y = (sub_data[COLS_X], sub_data[COLS_Y])
+        train_data = {X:  np.reshape(batch_X, (-1, N_IN)), 
+                      Y_: np.reshape(batch_Y, (-1, N_OUT))}
+        sess.run(train_step, feed_dict=train_data)
+        
     init_rewards.append(-sess.run(loss,feed_dict=feed_imm))
-    if len(init_rewards) > 50:
+    if len(init_rewards) > 10:
         if init_rewards[-1] >= pd.Series(init_rewards).describe()[6]:
             break
+    print(init_rewards[-1])
+        
         
 plt.plot(init_rewards)
 plt.show()
-dat_rwds, imm_rwds = [], []
 
+dat_rwds, imm_rwds = [], []
 def eval_nn(lst, feed):
     rwd = sess.run(loss, feed_dict=feed)
     lst.append(-rwd)
@@ -209,7 +219,7 @@ for i in range(1000000):
         
     else:
         
-        idx      = round(random.random()**0.5*IDX_MAX)
+        idx      = round(random.random()**0.75*IDX_MAX)
         batch_sz = random.randint(BATCH_SZ_MIN, BATCH_SZ_MAX)
         sub_data = data.iloc[idx:idx+batch_sz, :].reset_index(drop=True)
         sub_data = data.iloc[:IDX_MAX,:].sample(batch_sz)
@@ -234,7 +244,7 @@ for i in range(1000000):
 
 plt.plot(dat_rwds)
 plt.plot(imm_rwds)
-plt.legend(['Discount Test Reward', 'Actual Test Reward'])
+plt.legend(['Discount Test Reward', 'Actual Test Reward'], loc=4)
 plt.show()
 
 y1, y2 = sess.run([Y, Y_], feed_dict = feed_imm)
@@ -245,7 +255,7 @@ for x in y3:
     prof.append(prof[-1]+sum(x))
     
 plt.plot(prof)
-plt.legend(['Actual Reward'])
+plt.legend(['Actual Reward'], loc=4)
 plt.show()
 
 long_short = [[] for _ in range(3 if ALLOW_SHORTS else 2)]
@@ -264,12 +274,12 @@ rolling_window = 100
 for i in range(len(long_short)):
     dat = pd.rolling_mean(pd.Series(long_short[i]),rolling_window)
     plt.plot(dat)
-plt.legend(['USD', 'Long', 'Short'] if ALLOW_SHORTS else ['USD', 'Long'])
+plt.legend(['USD', 'Long', 'Short'] if ALLOW_SHORTS else ['USD', 'Long'], loc=4)
 plt.show()
 
 for i in range(len(props)):
     dat = pd.rolling_mean(pd.Series(props[i]),rolling_window)
     plt.plot(dat)
-plt.legend([x[x.index("_")+1:] for x in COLS_Y])
+plt.legend([x[x.index("_")+1:] for x in COLS_Y], loc=4)
 plt.show()
 plt.ion()
