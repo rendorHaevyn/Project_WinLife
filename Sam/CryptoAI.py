@@ -12,8 +12,8 @@ import re
 random.seed(1)
 
 print("Loading Data...", end="")
-data = pd.read_csv("M5/ALL.csv").dropna(axis=0, how='any').reset_index(drop=True)
-data.drop('date', axis=1, inplace=True)
+data_raw = pd.read_csv("M5/ALL.csv").dropna(axis=0, how='any').reset_index(drop=True)
+data = data_raw.drop('date', axis=1)
 print("{} rows & {} columns".format(len(data), len(data.columns)))
 data = data[int(len(data)*0.2):len(data)].reset_index(drop=True)
 
@@ -23,13 +23,34 @@ DISCOUNT       = True
 DISCOUNT_STEPS = 24
 GAMMA          = 0.95
 
-ASSETS      = ['USD', 'BTC', 'ETH', 'BCH', 'XRP', 'DASH', 'XMR', 'ZEC', 'LTC']
-INPUT_ASSET = []#['BTC', 'BCH', 'ETH']
+
+ASSETS      = ['USD', 'BTC', 'ETH', 'BCH', 'XRP', 'XMR', 'ZEC', 'LTC']
+INPUT_ASSET = ['BTC', 'BCH', 'ETH', 'BCH', 'XRP', 'XMR', 'ZEC', 'LTC']
 N_VEC       = 3 + 1 if INCLUDE_VOLUME else 0
 N_ASSETS    = ( len(ASSETS) * 2 - 1 ) if ALLOW_SHORTS else len(ASSETS)
 
 #for i, a in enumerate(ASSETS):
 #    data["M_{}".format(a)] = 1 if i == 0 else 0
+
+stmt  = "data['market_rwd'] = (0"
+n_rws = 0
+cols2 = []
+for c in data.columns:
+    if not INPUT_ASSET:
+        cols2.append(c)
+        if "reward" in c:
+            stmt += "+data['{}']".format(c)
+            n_rws += 1
+    else:
+        for a in set(INPUT_ASSET):
+            if a in c:
+                cols2.append(c)
+                if "reward" in c:
+                    stmt += "+data['{}']".format(c)
+                    n_rws += 1
+                    
+stmt += ")/{}".format(n_rws)
+exec(stmt)
 
 cols = []
 for c in data.columns:
@@ -39,7 +60,6 @@ for c in data.columns:
         for a in set(ASSETS):
             if a in c:
                 cols.append(c)
-                break
             
 if ALLOW_SHORTS:
     short_cols = []
@@ -48,25 +68,18 @@ if ALLOW_SHORTS:
             data[c+"_S"] = data[c].apply(lambda x : -x)
             short_cols.append(c+"_S")
     cols += short_cols   
-        
-cols2 = []
-for c in data.columns:
-    if not INPUT_ASSET:
-        cols2.append(c)
-    else:
-        for a in set(INPUT_ASSET):
-            if a in c:
-                cols2.append(c)
-                break
+
+
+exec(stmt)
         
 data['reward_USD'] = 0
 #data['reward_BCH'] = data['reward_BCH'] - 0.001
 #data['reward_BCH_S'] = data['reward_BCH_S'] - 0.001
 
 if INCLUDE_VOLUME:
-    COLS_X = [x for x in cols2 if 'L_' in x or "M_" in x]
+    COLS_X = [x for x in cols2 if 'L_' in x or "M_" in x or x == 'market_rwd']
 else:
-    COLS_X = [x for x in cols2 if ('L_' in x and "VOLUME" not in x) or "M_" in x]
+    COLS_X = [x for x in cols2 if ('L_' in x and "VOLUME" not in x) or "M_" in x or x == 'market_rwd']
 COLS_Y = ["reward_USD"] + [y for y in cols if 'reward' in y and "USD" not in y]
 
 if DISCOUNT:
@@ -82,6 +95,7 @@ else:
 
 data = data.dropna(axis=0, how='any').reset_index(drop=True)
 
+print("Normalizing Data...", end="")
 for x in COLS_X:
     
     data[x] = data[x].apply(lambda x : 0 if np.isinf(x) else x)
@@ -89,6 +103,7 @@ for x in COLS_X:
     
     data_imm[x] = data_imm[x].apply(lambda x : 0 if np.isinf(x) else x)
     data_imm[x] = (data_imm[x] - data_imm[x].describe()[1])/(data_imm[x].describe()[2]+1e-10)
+print("Done")
 
 N_IN  = len(COLS_X)
 N_OUT = len(COLS_Y)
