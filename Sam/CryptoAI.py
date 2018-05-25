@@ -68,9 +68,6 @@ if ALLOW_SHORTS:
             data[c+"_S"] = data[c].apply(lambda x : -x)
             short_cols.append(c+"_S")
     cols += short_cols   
-
-
-exec(stmt)
         
 data['reward_USD'] = 0
 #data['reward_BCH'] = data['reward_BCH'] - 0.001
