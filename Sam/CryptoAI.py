@@ -127,7 +127,8 @@ else:
     data_imm = data
 
 data = data.dropna(axis=0, how='any').reset_index(drop=True)
-data_imm = data_imm[:-DISCOUNT_STEPS]
+if DISCOUNT:
+    data_imm = data_imm[:-DISCOUNT_STEPS]
 
 print("Normalizing Data...", end="")
 for x in COLS_X:
