@@ -20,15 +20,15 @@ data = data_raw.drop('date', axis=1)
 print("{} rows & {} columns".format(len(data), len(data.columns)))
 data = data[int(len(data)*0.0):len(data)].reset_index(drop=True)
 
-COMMISSION     = 0.01
+COMMISSION     = 0.004
 INCLUDE_VOLUME = True
 ALLOW_SHORTS   = False
-DISCOUNT       = True
+DISCOUNT       = False
 DISCOUNT_STEPS = 12
 GAMMA          = 0.8
 
-ASSETS      = ['USD', 'BCH', 'XRP', 'XMR', 'ZEC', 'LTC']
-INPUT_ASSET = ['BTC', 'BCH', 'BCH', 'XRP', 'XMR', 'ZEC', 'LTC']
+ASSETS      = ['USD', 'BCH', 'XRP', 'XMR', 'LTC']
+INPUT_ASSET = ['BTC', 'BCH', 'XRP', 'XMR', 'LTC']
 N_VEC       = 3 + 1 if INCLUDE_VOLUME else 0
 N_ASSETS    = ( len(ASSETS) * 2 - 1 ) if ALLOW_SHORTS else len(ASSETS)
 
@@ -40,6 +40,16 @@ if COMMISSION > 0:
         data["MARGIN_{}".format(a)] = 1 if a == "USD" else 0
         if "MARGIN_{}".format(a) not in MARGIN_VEC:
             MARGIN_VEC.append("MARGIN_{}".format(a))
+    if ALLOW_SHORTS:
+        for i, a in enumerate(sorted(ASSETS)):
+            if a == "USD":
+                continue
+            data["MARGIN_{}_S".format(a)] = 0
+
+if ALLOW_SHORTS:
+    x = list(MARGIN_VEC)
+    for asset in x[1:]:
+        MARGIN_VEC.append(asset+"_S")
 
 stmt  = "data['market_lag'] = (0"
 n_rws = 0
@@ -99,7 +109,11 @@ else:
     COLS_X = [x for x in cols2 if ('L_' in x and "VOLUME" not in x) in x or x == 'market_lag']
     if COMMISSION != 0:
         COLS_X = COLS_X + MARGIN_VEC
-COLS_Y = ["reward_USD"] + sorted([y for y in cols if 'reward' in y and "USD" not in y])
+
+if ALLOW_SHORTS:
+    COLS_Y = [x.replace("MARGIN", "reward") for x in MARGIN_VEC]
+else:
+    COLS_Y = ["reward_USD"] + sorted([y for y in cols if 'reward' in y and "USD" not in y])
 
 if DISCOUNT:
     data_imm = data.copy()
@@ -129,11 +143,11 @@ N_IN  = len(COLS_X)
 N_OUT = len(COLS_Y)
 
 # Define number of Neurons per layer
-K = 300 # Layer 1
-L = 300 # Layer 2
-M = 300 # Layer 3
-N = 300 # Layer 4
-O = 300  # Layer 5
+K = 200 # Layer 1
+L = 200 # Layer 2
+M = 200 # Layer 3
+N = 200 # Layer 4
+O = 200  # Layer 5
 
 SDEV = 0.1
 
@@ -190,17 +204,17 @@ else:
                                        )
                             )
     tf_rewards = (  tf.log (
-                              tf.reduce_sum( ( 1-COMMISSION*(Y-PREV_W)**2 ) * (Y * 10**Y_), axis=1)
+                              tf.reduce_sum( ( 1-COMMISSION*tf.abs(Y-PREV_W) ) * (Y * 10**Y_), axis=1)
                            )
                  )
 
 # Optimizer
-LEARNING_RATE 	= 0.00003
+LEARNING_RATE 	= 0.00004
 optimizer 		= tf.train.AdamOptimizer(LEARNING_RATE)
 train_step 		= optimizer.minimize(loss)
 
-BATCH_SZ_MIN = 200#round(0.05*len(data))
-BATCH_SZ_MAX = 200#round(0.2*len(data))
+BATCH_SZ_MIN = 100#round(0.05*len(data))
+BATCH_SZ_MAX = 100#round(0.2*len(data))
 TEST_LEN     = round(0.2*len(data))
 IDX_MAX      = len(data) - TEST_LEN - BATCH_SZ_MAX - 1
 
@@ -223,12 +237,13 @@ def eval_nn(lst, feed):
     lst.append(-rwd)
 
 print("Begin Learning...")
+#---------------------------------------------------------------------------------------------------
 for i in range(10000000):
     
-    if i % 100 == 0 and i != 0:
+    if i % 200 == 0 and i != 0:
         
         if COMMISSION != 0:
-            prev_weights = [[1 if idx == 0 else 0 for idx in range(len(MARGIN_VEC))]]
+            prev_weights = [[1 if idx == 0 else 0 for idx in range(N_OUT)]]
             stime = time.time()
             test_dat.at[:,MARGIN_VEC] = prev_weights * len(test_dat)
             test_imm.at[:,MARGIN_VEC] = prev_weights * len(test_imm)
@@ -269,7 +284,7 @@ for i in range(10000000):
         batch_X, batch_Y = (sub_data[COLS_X], sub_data[COLS_Y])
         
         if COMMISSION != 0:
-            prev_weights = [[1 if idx == 0 else 0 for idx in range(len(MARGIN_VEC))]]
+            prev_weights = [[1 if idx == 0 else 0 for idx in range(N_OUT)]]
             batch_X.at[:,MARGIN_VEC] = prev_weights * len(batch_X)
             b_x = np.reshape(batch_X, (-1,N_IN))
             b_y = np.reshape(batch_Y, (-1,N_OUT))
@@ -295,22 +310,8 @@ for i in range(10000000):
                           Y_: np.reshape(batch_Y, (-1,N_OUT))}
             
         sess.run(train_step, feed_dict=train_data)
-        
-    #break
-        
-    #batch_X = np.matrix(batch_X)
-    #batch_Y = np.matrix(batch_Y)
 
-    #for index, a in enumerate(ASSETS):
-    #    batch_X["M_{}".format(a)] = 1 if index == 0 else 0 
-    
-    #for item in range(len(batch_X) - 1): 
-    #    row_data = {X: np.matrix(batch_X.iloc[item,:]),
-    #                Y_: np.matrix(batch_Y.iloc[item,:])}
-    #    weights, y_vec  = sess.run([Y, Y_], feed_dict=row_data)
-    #    w = (weights * 10** y_vec) / np.sum(weights * 10 ** y_vec)
-    #    for index, a in enumerate(ASSETS):
-    #        batch_X.loc[item+1, "M_{}".format(a)] = w[0][index]
+#---------------------------------------------------------------------------------------------------
 
 plt.plot(dat_rwds)
 plt.plot(imm_rwds)
@@ -318,7 +319,7 @@ plt.legend(['Discount Test Reward', 'Actual Test Reward'], loc=4)
 plt.show()
 
 if COMMISSION != 0:
-    prev_weights = [[1 if idx == 0 else 0 for idx in range(len(MARGIN_VEC))]]
+    prev_weights = [[1 if idx == 0 else 0 for idx in range(N_OUT)]]
     stime = time.time()
     test_dat.at[:,MARGIN_VEC] = prev_weights * len(test_dat)
     test_imm.at[:,MARGIN_VEC] = prev_weights * len(test_imm)
@@ -418,7 +419,8 @@ print("Iteration, PrevW, Action, PriceChange, NewW, Reward")
 #------------------------------------------------------------------------------
 for i, reward in enumerate(y):
     
-    c = 0.003
+    c = 0.0025
+    
     if i >= len(y):
         break
     
@@ -457,5 +459,6 @@ for i, reward in enumerate(y):
     log_rewards.append(math.log(rw))
     
 plt.plot(pd.Series(log_rewards).cumsum())
-plt.plot(prof)
+plt.plot(pd.Series(test_imm.close_BTC / test_imm.close_BTC[0]).apply(lambda x : math.log10(x)))
+#plt.plot(prof)
 plt.show()
