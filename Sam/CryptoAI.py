@@ -2,6 +2,7 @@ import numpy as np
 import random
 import pandas as pd
 import sklearn
+import sklearn.decomposition
 import math
 import itertools
 import threading
@@ -15,15 +16,15 @@ def pattern_match(patt, string):
 
 print("Loading Data...", end="")
 data_raw = pd.read_csv("M15/ALL.csv").dropna(axis=0, how='any').reset_index(drop=True)
-data = data_raw[data_raw['date'] > 1514466000]
-data = data_raw.drop('date', axis=1)
+data     = data_raw[data_raw['date'] > 1514466000]
+data     = data_raw.drop('date', axis=1)
 print("{} rows & {} columns".format(len(data), len(data.columns)))
-data = data[int(len(data)*0.0):len(data)].reset_index(drop=True)
 
 COMMISSION     = 0.004
+USE_PCA        = True
 INCLUDE_VOLUME = True
 ALLOW_SHORTS   = False
-DISCOUNT       = False
+DISCOUNT       = True
 DISCOUNT_STEPS = 12
 GAMMA          = 0.8
 
@@ -124,11 +125,16 @@ if DISCOUNT:
     exec(stmt)
     print("Done")
 else:
-    data_imm = data
+    data_imm = data.copy()
 
 data = data.dropna(axis=0, how='any').reset_index(drop=True)
 if DISCOUNT:
     data_imm = data_imm[:-DISCOUNT_STEPS]
+
+#if not DISCOUNT or True:
+#    for c in COLS_Y:
+#        data[c] = data[c] - math.log10(1.001)
+#    data["reward_USD"] = 0
 
 print("Normalizing Data...", end="")
 for x in COLS_X:
@@ -140,15 +146,27 @@ for x in COLS_X:
     data_imm[x] = (data_imm[x] - data_imm[x].describe()[1])/(data_imm[x].describe()[2]+1e-10)
 print("Done")
 
+if USE_PCA:
+    PCA_MODEL = sklearn.decomposition.PCA(15)
+    PCA_MODEL.fit(data[COLS_X])
+    Xs = pd.DataFrame(PCA_MODEL.transform(data[COLS_X]))
+    Xs.columns = ["PCA_"+str(x) for x in range(1,len(Xs.columns)+1)]
+    data[Xs.columns] = Xs
+    data_imm[Xs.columns] = Xs
+    COLS_X = list(Xs.columns) + MARGIN_VEC
+    print(PCA_MODEL.explained_variance_)
+    print(PCA_MODEL.explained_variance_ratio_)
+    print(PCA_MODEL.explained_variance_ratio_.cumsum())
+
 N_IN  = len(COLS_X)
 N_OUT = len(COLS_Y)
 
 # Define number of Neurons per layer
-K = 200 # Layer 1
-L = 200 # Layer 2
-M = 200 # Layer 3
-N = 200 # Layer 4
-O = 200  # Layer 5
+K = 300 # Layer 1
+L = 300 # Layer 2
+M = 300 # Layer 3
+N = 300 # Layer 4
+O = 300  # Layer 5
 
 SDEV = 0.1
 
@@ -167,8 +185,8 @@ W3 = tf.Variable(tf.random_normal([L, M], stddev = SDEV))
 B3 = tf.Variable(tf.random_normal([M]))
 
 # LAYER 4
-W4 = tf.Variable(tf.random_normal([M, N], stddev = SDEV))
-B4 = tf.Variable(tf.random_normal([N]))
+W4 = tf.Variable(tf.random_normal([M, N_OUT], stddev = SDEV))
+B4 = tf.Variable(tf.random_normal([N_OUT]))
 
 # LAYER 5
 W5 = tf.Variable(tf.random_normal([N, N_OUT], stddev = SDEV))
@@ -186,9 +204,9 @@ X = tf.reshape(X, [-1, N_IN])
 Y1 = tf.nn.relu(tf.matmul(X,  W1) + B1)
 Y2 = tf.nn.relu(tf.matmul(Y1, W2) + B2)
 Y3 = tf.nn.relu(tf.matmul(Y2, W3) + B3)
-Y4 = tf.nn.relu(tf.matmul(Y3, W4) + B4)
+Y = tf.nn.softmax(tf.matmul(Y3, W4) + B4)
 #Y5 = tf.nn.leaky_relu(tf.matmul(Y4, W5) + B5)
-Y =  tf.nn.softmax(tf.matmul(Y4, W5) + B5)
+#Y =  tf.nn.softmax(tf.matmul(Y4, W5) + B5)
 #Y  = (tf.matmul(Y4, W5) + B5)
 
 # PrevW
@@ -196,8 +214,8 @@ PREV_W = tf.placeholder(tf.float32, [None, N_OUT])
 Y_     = tf.placeholder(tf.float32, [None, N_OUT])
 
 if COMMISSION == 0:
-    loss = -tf.reduce_mean( 100 * (10**tf.reduce_sum (Y * Y_, axis=1) - 1) )
-    tf_rewards = ( tf.reduce_sum(tf.reduce_sum(Y * Y_, axis=1) ) )
+    loss = -tf.reduce_mean( tf.log(10**tf.reduce_sum (Y * Y_, axis=1) ) )
+    tf_rewards = ( tf.log(tf.reduce_sum(Y * Y_, axis=1) ) )
 else:
     #loss = -tf.reduce_mean( 10000000 *   (  (1-COMMISSION*(Y-PREV_W)**2) * (Y * 10**Y_)  ) )
     loss = -tf.reduce_mean  (   tf.log (
@@ -210,12 +228,12 @@ else:
                  )
 
 # Optimizer
-LEARNING_RATE 	= 0.00004
+LEARNING_RATE 	= 0.000005
 optimizer 		= tf.train.AdamOptimizer(LEARNING_RATE)
 train_step 		= optimizer.minimize(loss)
 
-BATCH_SZ_MIN = 100#round(0.05*len(data))
-BATCH_SZ_MAX = 100#round(0.2*len(data))
+BATCH_SZ_MIN = 50#round(0.05*len(data))
+BATCH_SZ_MAX = 50#round(0.2*len(data))
 TEST_LEN     = round(0.2*len(data))
 IDX_MAX      = len(data) - TEST_LEN - BATCH_SZ_MAX - 1
 
@@ -233,9 +251,10 @@ sess = tf.Session()
 sess.run(init)
 
 dat_rwds, imm_rwds = [], []
-def eval_nn(lst, feed):
+def eval_nn(lst, feed, len_test=1):
     rwd = sess.run(loss, feed_dict=feed)
-    lst.append(-rwd)
+    rwd = 100 * math.exp(-rwd * len_test) - 100
+    lst.append(rwd)
 
 print("Begin Learning...")
 #---------------------------------------------------------------------------------------------------
@@ -271,10 +290,11 @@ for i in range(10000000):
                         Y_: np.reshape(test_imm[COLS_Y], (-1, N_OUT)),
                         PREV_W: np.reshape(prev_weights, (-1, N_OUT))}
                 
-        threading.Thread(target=eval_nn,args=(dat_rwds,feed_dat)).start()
-        threading.Thread(target=eval_nn,args=(imm_rwds,feed_imm)).start()
-        if dat_rwds and imm_rwds:
-            print("{:<16} {:<16.6f} {:<16.6f}".format(i, dat_rwds[-1], imm_rwds[-1]))
+        threading.Thread(target=eval_nn,args=(dat_rwds,feed_dat,len(test_dat))).start()
+        threading.Thread(target=eval_nn,args=(imm_rwds,feed_imm,len(test_imm))).start()
+        while dat_rwds == [] or imm_rwds == []:
+            pass
+        print("{:<16} {:<16.6f} {:<16.6f}%".format(i, dat_rwds[-1], imm_rwds[-1]))
         
     else:
         
