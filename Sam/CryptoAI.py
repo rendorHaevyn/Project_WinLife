@@ -3,6 +3,7 @@ import random
 import pandas as pd
 import sklearn
 import sklearn.decomposition
+import sklearn.ensemble
 import math
 import itertools
 import threading
@@ -15,16 +16,18 @@ def pattern_match(patt, string):
     return re.findall(patt, string) != []
 
 print("Loading Data...", end="")
-data_raw = pd.read_csv("M15/ALL.csv").dropna(axis=0, how='any').reset_index(drop=True)
+data_raw = pd.read_csv("M30/ALL.csv").dropna(axis=0, how='any').reset_index(drop=True)
 data     = data_raw[data_raw['date'] > 1514466000]
 data     = data_raw.drop('date', axis=1)
 print("{} rows & {} columns".format(len(data), len(data.columns)))
 
-COMMISSION     = 0.004
-USE_PCA        = True
+COMMISSION     = 0.0035
+USE_PCA        = False
+PCA_COMPONENTS = 50
+USE_SUPER      = False
 INCLUDE_VOLUME = True
 ALLOW_SHORTS   = False
-DISCOUNT       = True
+DISCOUNT       = False
 DISCOUNT_STEPS = 12
 GAMMA          = 0.8
 
@@ -147,16 +150,36 @@ for x in COLS_X:
 print("Done")
 
 if USE_PCA:
-    PCA_MODEL = sklearn.decomposition.PCA(15)
+    PCA_MODEL = sklearn.decomposition.PCA(PCA_COMPONENTS)
     PCA_MODEL.fit(data[COLS_X])
     Xs = pd.DataFrame(PCA_MODEL.transform(data[COLS_X]))
     Xs.columns = ["PCA_"+str(x) for x in range(1,len(Xs.columns)+1)]
     data[Xs.columns] = Xs
     data_imm[Xs.columns] = Xs
-    COLS_X = list(Xs.columns) + MARGIN_VEC
+    if COMMISSION != 0:
+        COLS_X = list(Xs.columns) + MARGIN_VEC
+    else:
+        COLS_X = list(Xs.columns)
     print(PCA_MODEL.explained_variance_)
     print(PCA_MODEL.explained_variance_ratio_)
     print(PCA_MODEL.explained_variance_ratio_.cumsum())
+    
+BATCH_SZ_MIN = 20#round(0.05*len(data))
+BATCH_SZ_MAX = 20#round(0.2*len(data))
+TEST_LEN     = round(0.2*len(data))
+IDX_MAX      = len(data) - TEST_LEN - BATCH_SZ_MAX - 1
+
+if USE_SUPER:
+    training = data[:IDX_MAX]
+    cols_to_add = []
+    for target in COLS_Y:
+        model = sklearn.ensemble.RandomForestRegressor()
+        model.fit(training[COLS_X], training[target])
+        newcol = "RF_{}".format(target)
+        data[newcol] = model.predict(data[COLS_X])
+        data_imm[newcol] = model.predict(data_imm[COLS_X])
+        cols_to_add.append(newcol)
+    COLS_X += cols_to_add
 
 N_IN  = len(COLS_X)
 N_OUT = len(COLS_Y)
@@ -219,7 +242,7 @@ if COMMISSION == 0:
 else:
     #loss = -tf.reduce_mean( 10000000 *   (  (1-COMMISSION*(Y-PREV_W)**2) * (Y * 10**Y_)  ) )
     loss = -tf.reduce_mean  (   tf.log (
-                                          tf.reduce_sum( ( 1-COMMISSION*(Y-PREV_W)**2 ) * (Y * 10**Y_), axis=1)
+                                          tf.reduce_sum( ( 1-COMMISSION*tf.abs(Y-PREV_W) ) * (Y * 10**Y_), axis=1)
                                        )
                             )
     tf_rewards = (  tf.log (
@@ -231,11 +254,6 @@ else:
 LEARNING_RATE 	= 0.000005
 optimizer 		= tf.train.AdamOptimizer(LEARNING_RATE)
 train_step 		= optimizer.minimize(loss)
-
-BATCH_SZ_MIN = 50#round(0.05*len(data))
-BATCH_SZ_MAX = 50#round(0.2*len(data))
-TEST_LEN     = round(0.2*len(data))
-IDX_MAX      = len(data) - TEST_LEN - BATCH_SZ_MAX - 1
 
 test_imm   = data_imm.iloc[len(data_imm)-TEST_LEN:, :].reset_index(drop=True)
 test_dat   = data.iloc[len(data)-TEST_LEN:, :].reset_index(drop=True)
@@ -292,9 +310,8 @@ for i in range(10000000):
                 
         threading.Thread(target=eval_nn,args=(dat_rwds,feed_dat,len(test_dat))).start()
         threading.Thread(target=eval_nn,args=(imm_rwds,feed_imm,len(test_imm))).start()
-        while dat_rwds == [] or imm_rwds == []:
-            pass
-        print("{:<16} {:<16.6f} {:<16.6f}%".format(i, dat_rwds[-1], imm_rwds[-1]))
+        if dat_rwds and imm_rwds:
+            print("{:<16} {:<16.6f} {:<16.6f}%".format(i, dat_rwds[-1], imm_rwds[-1]))
         
     else:
         
@@ -377,12 +394,6 @@ y3 = y1 * y2
 prof = [0]
 for x in y3:
     prof.append(prof[-1]+sum(x))
-    
-prof2 = prof
-    
-prof = [0]
-for x in f_rewards:
-    prof.append(prof[-1]+math.log(math.exp(x)))
     
 plt.plot(prof)
 plt.legend(['Actual Reward'], loc=4)
@@ -475,11 +486,15 @@ for i, reward in enumerate(y):
     #print(i, showArray(prevW), "-->", showArray(w[i]), "*", showArray(y[i]), "=", showArray(newW), " {{ {}{:.3f}% }}".format("+" if rw >= 1 else "", 100*rw-100))
     
     prevW = newW
-    cw = newW
+    cw    = newW
     rewards.append(rw)
     log_rewards.append(math.log(rw))
     
 plt.plot(pd.Series(log_rewards).cumsum())
 plt.plot(pd.Series(test_imm.close_BTC / test_imm.close_BTC[0]).apply(lambda x : math.log10(x)))
 #plt.plot(prof)
+plt.show()
+
+plt.plot(pd.Series(test_imm.close_BTC / test_imm.close_BTC[0]).apply(lambda x : math.log10(x)),
+         pd.Series(log_rewards).cumsum(), 'ob')
 plt.show()
