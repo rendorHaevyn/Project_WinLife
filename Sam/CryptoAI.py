@@ -16,23 +16,23 @@ def pattern_match(patt, string):
     return re.findall(patt, string) != []
 
 print("Loading Data...", end="")
-data_raw = pd.read_csv("M30/ALL.csv").dropna(axis=0, how='any').reset_index(drop=True)
+data_raw = pd.read_csv("M15/ALL.csv").dropna(axis=0, how='any').reset_index(drop=True)
 data     = data_raw[data_raw['date'] > 1514466000]
 data     = data_raw.drop('date', axis=1)
 print("{} rows & {} columns".format(len(data), len(data.columns)))
 
-COMMISSION     = 0.0035
-USE_PCA        = False
-PCA_COMPONENTS = 50
+COMMISSION     = 0.0025
+USE_PCA        = True
+PCA_COMPONENTS = 100
 USE_SUPER      = False
 INCLUDE_VOLUME = True
 ALLOW_SHORTS   = False
 DISCOUNT       = False
-DISCOUNT_STEPS = 12
-GAMMA          = 0.8
+DISCOUNT_STEPS = 24
+GAMMA          = 0.9
 
 ASSETS      = ['USD', 'BCH', 'XRP', 'XMR', 'LTC']
-INPUT_ASSET = ['BTC', 'BCH', 'XRP', 'XMR', 'LTC']
+INPUT_ASSET = []
 N_VEC       = 3 + 1 if INCLUDE_VOLUME else 0
 N_ASSETS    = ( len(ASSETS) * 2 - 1 ) if ALLOW_SHORTS else len(ASSETS)
 
@@ -136,7 +136,7 @@ if DISCOUNT:
 
 #if not DISCOUNT or True:
 #    for c in COLS_Y:
-#        data[c] = data[c] - math.log10(1.001)
+#        data[c] = data[c] - math.log10(1.004)
 #    data["reward_USD"] = 0
 
 print("Normalizing Data...", end="")
@@ -149,9 +149,14 @@ for x in COLS_X:
     data_imm[x] = (data_imm[x] - data_imm[x].describe()[1])/(data_imm[x].describe()[2]+1e-10)
 print("Done")
 
+BATCH_SZ_MIN = round(0.05*len(data))#round(0.05*len(data))
+BATCH_SZ_MAX = round(0.1*len(data))#round(0.2*len(data))
+TEST_LEN     = round(0.2*len(data))
+IDX_MAX      = max(0, len(data) - TEST_LEN - BATCH_SZ_MAX - 1)
+
 if USE_PCA:
     PCA_MODEL = sklearn.decomposition.PCA(PCA_COMPONENTS)
-    PCA_MODEL.fit(data[COLS_X])
+    PCA_MODEL.fit(data[:IDX_MAX+BATCH_SZ_MAX][COLS_X])
     Xs = pd.DataFrame(PCA_MODEL.transform(data[COLS_X]))
     Xs.columns = ["PCA_"+str(x) for x in range(1,len(Xs.columns)+1)]
     data[Xs.columns] = Xs
@@ -163,11 +168,6 @@ if USE_PCA:
     print(PCA_MODEL.explained_variance_)
     print(PCA_MODEL.explained_variance_ratio_)
     print(PCA_MODEL.explained_variance_ratio_.cumsum())
-    
-BATCH_SZ_MIN = 20#round(0.05*len(data))
-BATCH_SZ_MAX = 20#round(0.2*len(data))
-TEST_LEN     = round(0.2*len(data))
-IDX_MAX      = len(data) - TEST_LEN - BATCH_SZ_MAX - 1
 
 if USE_SUPER:
     training = data[:IDX_MAX]
@@ -251,7 +251,7 @@ else:
                  )
 
 # Optimizer
-LEARNING_RATE 	= 0.000005
+LEARNING_RATE 	= 0.00005
 optimizer 		= tf.train.AdamOptimizer(LEARNING_RATE)
 train_step 		= optimizer.minimize(loss)
 
@@ -348,6 +348,11 @@ for i in range(10000000):
                           Y_: np.reshape(batch_Y, (-1,N_OUT))}
             
         sess.run(train_step, feed_dict=train_data)
+        #lss_train = sess.run(loss,train_data)
+        #lss_test  = sess.run(loss,feed_imm)
+        #lss_train = 100 * math.exp(-lss_train) - 100
+        #lss_test  = 100 * math.exp(-lss_test) - 100
+        #print("{:<16} {:<16.6f} {:<16.6f}%".format(i, lss_train, lss_test))
 
 #---------------------------------------------------------------------------------------------------
 
