@@ -318,11 +318,14 @@ for i in range(10000000):
         idx      = round(random.random()**0.75*IDX_MAX)
         batch_sz = random.randint(BATCH_SZ_MIN, BATCH_SZ_MAX)
         sub_data = data.iloc[idx:idx+batch_sz, :].reset_index(drop=True)
-        #sub_data = data.iloc[:IDX_MAX,:].sample(batch_sz)
+        #sub_data = data
         batch_X, batch_Y = (sub_data[COLS_X], sub_data[COLS_Y])
         
         if COMMISSION != 0:
-            prev_weights = [[1 if idx == 0 else 0 for idx in range(N_OUT)]]
+            prev_weights = []
+            rand = np.random.random(N_OUT)
+            rand /= rand.sum()
+            prev_weights.append(list(rand))
             batch_X.at[:,MARGIN_VEC] = prev_weights * len(batch_X)
             b_x = np.reshape(batch_X, (-1,N_IN))
             b_y = np.reshape(batch_Y, (-1,N_OUT))
@@ -347,7 +350,7 @@ for i in range(10000000):
             train_data = {X:  np.reshape(batch_X, (-1,N_IN)), 
                           Y_: np.reshape(batch_Y, (-1,N_OUT))}
             
-        sess.run(train_step, feed_dict=train_data)
+        #sess.run(train_step, feed_dict=train_data)
         #lss_train = sess.run(loss,train_data)
         #lss_test  = sess.run(loss,feed_imm)
         #lss_train = 100 * math.exp(-lss_train) - 100
