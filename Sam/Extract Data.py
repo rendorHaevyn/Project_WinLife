@@ -154,7 +154,7 @@ def ExtractData(N_LAGS=5):
                             loops += 1
                         if broke:
                             continue
-                        data = df.ix[idx1:(row_n+1),'volume'] / denom
+                        data = df.ix[idx1:(row_n+1),'volume'] / denom - 1
                         #data = data.apply(lambda x : math.log10(x))
                         coeff = np.linalg.lstsq(np.reshape(range(len(data)), (-1, 1)), data)[0]
                         coefs.append(coeff[0])
