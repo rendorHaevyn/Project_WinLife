@@ -32,7 +32,7 @@ DISCOUNT       = False
 DISCOUNT_STEPS = 24
 GAMMA          = 0.9
 
-ASSETS      = ['USD', 'BCH', 'XRP', 'XMR', 'LTC']
+ASSETS      = ['USD', 'BTC', 'BCH', 'XRP', 'XMR', 'LTC']
 INPUT_ASSET = []
 N_VEC       = 3 + 1 if INCLUDE_VOLUME else 0
 N_ASSETS    = ( len(ASSETS) * 2 - 1 ) if ALLOW_SHORTS else len(ASSETS)
