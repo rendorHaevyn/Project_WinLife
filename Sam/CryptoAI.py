@@ -182,7 +182,7 @@ if USE_SUPER:
         model.fit(training[COLS_X], training[target])
         newcol = "RF_{}".format(target)
         data[newcol] = model.predict(data[COLS_X])
-        data_imm[newcol] = model.predict(data_imm[COLS_X])
+        data_imm[newcol] = data[newcol]
         cols_to_add.append(newcol)
     COLS_X += cols_to_add
 
