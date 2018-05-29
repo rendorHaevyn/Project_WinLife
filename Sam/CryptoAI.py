@@ -4,6 +4,7 @@ import pandas as pd
 import sklearn
 import sklearn.decomposition
 import sklearn.ensemble
+import sklearn.preprocessing
 import math
 import itertools
 import threading
@@ -139,20 +140,24 @@ if DISCOUNT:
 #        data[c] = data[c] - math.log10(1.004)
 #    data["reward_USD"] = 0
 
-print("Normalizing Data...", end="")
-for x in COLS_X:
-    
-    data[x] = data[x].apply(lambda x : 0 if np.isinf(x) else x)
-    data[x] = (data[x] - data[x].describe()[1])/(data[x].describe()[2]+1e-10)
-    
-    data_imm[x] = data_imm[x].apply(lambda x : 0 if np.isinf(x) else x)
-    data_imm[x] = (data_imm[x] - data_imm[x].describe()[1])/(data_imm[x].describe()[2]+1e-10)
-print("Done")
-
 BATCH_SZ_MIN = round(0.05*len(data))#round(0.05*len(data))
 BATCH_SZ_MAX = round(0.1*len(data))#round(0.2*len(data))
 TEST_LEN     = round(0.2*len(data))
 IDX_MAX      = max(0, len(data) - TEST_LEN - BATCH_SZ_MAX - 1)
+
+
+print("Normalizing Data...", end="")
+for x in COLS_X:
+    
+    median      = data[x].describe()[5]
+    data[x]     = data[x].apply(lambda x : median if np.isinf(x) or np.isnan(x) else x)
+    data_imm[x] = data[x]
+    
+scaler = sklearn.preprocessing.StandardScaler()
+scaler.fit(data[:IDX_MAX+BATCH_SZ_MAX][COLS_X])
+data[COLS_X] = scaler.transform(data[COLS_X])
+data_imm[COLS_X] = data[COLS_X]
+print("Done")
 
 if USE_PCA:
     PCA_MODEL = sklearn.decomposition.PCA(PCA_COMPONENTS)
