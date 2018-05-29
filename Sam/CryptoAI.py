@@ -17,14 +17,14 @@ def pattern_match(patt, string):
     return re.findall(patt, string) != []
 
 print("Loading Data...", end="")
-data_raw = pd.read_csv("M15/ALL.csv").dropna(axis=0, how='any').reset_index(drop=True)
+data_raw = pd.read_csv("M30/ALL.csv").dropna(axis=0, how='any').reset_index(drop=True)
 data     = data_raw[data_raw['date'] > 1514466000]
 data     = data_raw.drop('date', axis=1)
 print("{} rows & {} columns".format(len(data), len(data.columns)))
 
 COMMISSION     = 0.0025
 USE_PCA        = True
-PCA_COMPONENTS = 100
+PCA_COMPONENTS = 400
 USE_SUPER      = False
 INCLUDE_VOLUME = True
 ALLOW_SHORTS   = False
@@ -107,11 +107,11 @@ for i in range(len(data)):
 data['reward_USD'] = 0
 
 if INCLUDE_VOLUME:
-    COLS_X = [x for x in cols2 if 'L_' in x or x == 'market_lag']
+    COLS_X = [x for x in cols2 if 'L_' in x or x == 'market_lag' or "REG" in x]
     if COMMISSION != 0:
         COLS_X = COLS_X + MARGIN_VEC
 else:
-    COLS_X = [x for x in cols2 if ('L_' in x and "VOLUME" not in x) in x or x == 'market_lag']
+    COLS_X = [x for x in cols2 if ('L_' in x and "VOLUME" not in x) in x or x == 'market_lag' or "REG" in x]
     if COMMISSION != 0:
         COLS_X = COLS_X + MARGIN_VEC
 
@@ -196,29 +196,29 @@ M = 300 # Layer 3
 N = 300 # Layer 4
 O = 300  # Layer 5
 
-SDEV = 0.1
+SDEV = 0.05
 
 # LAYER 1
 # Initialize weights, normal dist.
 W1 = tf.Variable(tf.random_normal([N_IN, K], stddev = SDEV))
 # Bias terms initialized to zero
-B1 = tf.Variable(tf.random_normal([K]))
+B1 = tf.Variable(tf.random_normal([K], stddev = SDEV))
 
 # LAYER 2
 W2 = tf.Variable(tf.random_normal([K, L], stddev = SDEV))
-B2 = tf.Variable(tf.random_normal([L]))
+B2 = tf.Variable(tf.random_normal([L], stddev = SDEV))
 
 # LAYER 3
 W3 = tf.Variable(tf.random_normal([L, M], stddev = SDEV))
-B3 = tf.Variable(tf.random_normal([M]))
+B3 = tf.Variable(tf.random_normal([M], stddev = SDEV))
 
 # LAYER 4
 W4 = tf.Variable(tf.random_normal([M, N_OUT], stddev = SDEV))
-B4 = tf.Variable(tf.random_normal([N_OUT]))
+B4 = tf.Variable(tf.random_normal([N_OUT], stddev = SDEV))
 
 # LAYER 5
 W5 = tf.Variable(tf.random_normal([N, N_OUT], stddev = SDEV))
-B5 = tf.Variable(tf.random_normal([N_OUT]))
+B5 = tf.Variable(tf.random_normal([N_OUT], stddev = SDEV))
 
 # LAYER 6
 #W6 = tf.Variable(tf.random_normal([O, N_OUT], stddev = SDEV))
