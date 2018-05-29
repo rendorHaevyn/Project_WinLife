@@ -112,55 +112,49 @@ def ExtractData(N_LAGS=5):
                         coefs.append(np.nan)
                 df["L_REG_CLOSE_{}".format(i+1)] = coefs
 
+            all_close_coefs = []
+            all_vol_coefs = []
             for i, hours in enumerate(REG_HOURS):
                 L = len(df)
                 look_back1 = (hours * 3600) // tf
-                coefs = []
+                coefs_close, coefs_vol = [], []
                 for row_n in range(L):
-                    try:
-                        idx1 = row_n - look_back1
-                        if idx1 < 0:
-                            coefs.append(np.nan)
-                            continue
+                    
+                    # close
+                    idx1 = row_n - look_back1
+                    if idx1 < 0:
+                        coefs_close.append(np.nan)
+                        coefs_vol.append(np.nan)
+                        continue
+                    else:
                         data = df.ix[idx1:(row_n+1),'close'] / df.ix[idx1,'close']
                         data = data.apply(lambda x : math.log10(x))
                         coeff = np.linalg.lstsq(np.reshape(range(len(data)), (-1, 1)), data)[0]
-                        coefs.append(coeff[0])
-                    except Exception as err:
-                        print("error is ", err, idx1)
-                        coefs.append(np.nan)
+                        coefs_close.append(coeff[0])
+                    # volume
+                    idx1 = row_n - look_back1
+                    denom = df.ix[idx1,'volume']
+                    loops = 1
+                    broke = False
+                    while denom == 0:
+                        new_idx = idx1 - loops
+                        if new_idx < 0:
+                            coefs_vol.append(0)
+                            broke = True
+                            break
+                        denom = df.ix[new_idx,'volume']
+                        loops += 1
+                    if broke:
+                        continue
+                    data = df.ix[idx1:(row_n+1),'volume'] / denom - 1
+                    coeff = np.linalg.lstsq(np.reshape(range(len(data)), (-1, 1)), data)[0]
+                    coefs_vol.append(coeff[0])
+                all_close_coefs.append(coefs_close)
+                all_vol_coefs.append(coefs_vol)
+            
+            for i, coefs in enumerate(all_close_coefs):
                 df["REG_CLOSE_{}".format(i+1)] = coefs
-
-            for i, hours in enumerate(REG_HOURS):
-                L = len(df)
-                look_back1 = (hours * 3600) // tf
-                coefs = []
-                for row_n in range(L):
-                    try:
-                        idx1 = row_n - look_back1
-                        if idx1 < 0:
-                            coefs.append(np.nan)
-                            continue
-                        denom = df.ix[idx1,'volume']
-                        loops = 1
-                        broke = False
-                        while denom == 0:
-                            new_idx = idx1 - loops
-                            if new_idx < 0:
-                                coefs.append(0)
-                                broke = True
-                                break
-                            denom = df.ix[new_idx,'volume']
-                            loops += 1
-                        if broke:
-                            continue
-                        data = df.ix[idx1:(row_n+1),'volume'] / denom - 1
-                        #data = data.apply(lambda x : math.log10(x))
-                        coeff = np.linalg.lstsq(np.reshape(range(len(data)), (-1, 1)), data)[0]
-                        coefs.append(coeff[0])
-                    except Exception as err:
-                        print("error is ", err, denom)
-                        coefs.append(np.nan)
+            for i, coefs in enumerate(all_vol_coefs):
                 df["REG_VOLUME_{}".format(i+1)] = coefs
                 
             #-------------------------------------------------------------------
