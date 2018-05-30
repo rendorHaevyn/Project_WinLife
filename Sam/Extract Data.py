@@ -24,10 +24,23 @@ def ExtractData(N_LAGS=5):
     ALL_TICKERS = sorted(POL.returnTicker().keys())
 
     JUNE_1_2017 = 1496275200
+    NOV_1_2017 = 1509454800
+    START_TIME = NOV_1_2017
 
     tickers = []
     for T in ALL_TICKERS:
         tickers.append((T, T[:T.index("_")], T[T.index("_")+1:], 1 if "USDT" in T else 0))
+        
+    new_tickers = []
+    for t in tickers:
+        keep = False
+        for coin in sorted(['BCH', 'BTC', 'DASH', 'ETC', 'ETH', 'LTC', 'XMR', 'XRP', 'ZEC']):
+            if coin in t:
+                keep = True
+                break
+        if keep:
+            new_tickers.append(t)
+    tickers = new_tickers
 
     coin_list = pd.DataFrame(tickers)
     coin_list.columns = ['Pair', 'Base','Coin', 'Extract']
@@ -50,7 +63,14 @@ def ExtractData(N_LAGS=5):
             if not coin.Extract:
                 continue
             TICK = coin.Pair
-            data = POL.returnChartData(TICK,tf,JUNE_1_2017,tm)
+            while True:
+                try:
+                    data = POL.returnChartData(TICK,tf,START_TIME,tm)
+                    break
+                except KeyboardInterrupt:
+                    sys.exit()
+                except Exception as error:
+                    print(error)
             df = pd.DataFrame(data)
             df['reward'] = df['close'].shift(-1) / df['close'] - 1
             df['reward'] = df.reward.apply(lambda x : math.log(x+1, 10))
@@ -127,7 +147,7 @@ def ExtractData(N_LAGS=5):
                         coefs_vol.append(np.nan)
                         continue
                     else:
-                        data = df.ix[idx1:(row_n+1),'close'] / df.ix[idx1,'close']
+                        data = df.ix[idx1:(row_n),'close'] / df.ix[idx1,'close']
                         data = data.apply(lambda x : math.log10(x))
                         coeff = np.linalg.lstsq(np.reshape(range(len(data)), (-1, 1)), data)[0]
                         coefs_close.append(coeff[0])
@@ -146,7 +166,7 @@ def ExtractData(N_LAGS=5):
                         loops += 1
                     if broke:
                         continue
-                    data = df.ix[idx1:(row_n+1),'volume'] / denom - 1
+                    data = df.ix[idx1:(row_n),'volume'] / denom - 1
                     coeff = np.linalg.lstsq(np.reshape(range(len(data)), (-1, 1)), data)[0]
                     coefs_vol.append(coeff[0])
                 all_close_coefs.append(coefs_close)
