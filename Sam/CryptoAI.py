@@ -13,41 +13,54 @@ import tensorflow as tf
 import re
 import time
 
+# Utility Function to return True / False regex matching
 def pattern_match(patt, string):
     return re.findall(patt, string) != []
 
+#--------------------------------------------------------------------------------------
+# Read in the price data
+#--------------------------------------------------------------------------------------
 print("Loading Data...", end="")
-data_raw = pd.read_csv("M30/ALL.csv").dropna(axis=0, how='any').reset_index(drop=True)
+data_raw = pd.read_csv("M15/ALL.csv").dropna(axis=0, how='any').reset_index(drop=True)
 data     = data_raw[data_raw['date'] > 1514466000]
 data     = data_raw.drop('date', axis=1)
+data['reward_USD'] = 0
 print("{} rows & {} columns".format(len(data), len(data.columns)))
-
-COMMISSION     = 0.0025
-USE_PCA        = True
-PCA_COMPONENTS = 400
-USE_SUPER      = False
-INCLUDE_VOLUME = True
-ALLOW_SHORTS   = False
-DISCOUNT       = False
-DISCOUNT_STEPS = 24
-GAMMA          = 0.9
-
-ASSETS      = ['USD', 'BTC', 'BCH', 'XRP', 'XMR', 'LTC']
-INPUT_ASSET = []
+#--------------------------------------------------------------------------------------
+# Manual Options
+#--------------------------------------------------------------------------------------
+COMMISSION     = 0.0025  # Commision % as a decimal to use in loss function
+USE_PCA        = False   # Use PCA Dimensionality Reduction
+PCA_COMPONENTS = 400     # Number of Principle Components to reduce down to
+USE_SUPER      = False   # Create new features using supervised learning
+INCLUDE_VOLUME = True    # Include Volume as a feature
+ALLOW_SHORTS   = False   # Allow Shorts or not
+DISCOUNT       = False   # Train on discounted rewards
+DISCOUNT_STEPS = 24      # Number of periods to look ahead for discounting
+GAMMA          = 0.9     # The discount factor
+#--------------------------------------------------------------------------------------
+# List of coins to trade. Set to [] to use all coins
+#--------------------------------------------------------------------------------------
+COINS       = ['USD', 'BCH', 'XRP', 'XMR', 'LTC']
+# List of coins data to use as input variables. Set to [] to use all coins
+#--------------------------------------------------------------------------------------
+INPUT_COINS = []
 N_VEC       = 3 + 1 if INCLUDE_VOLUME else 0
-N_ASSETS    = ( len(ASSETS) * 2 - 1 ) if ALLOW_SHORTS else len(ASSETS)
-
+N_COINS     = ( len(COINS) * 2 - 1 ) if ALLOW_SHORTS else len(COINS)
+#--------------------------------------------------------------------------------------
+# Create fields to store "Previous Weights" - Only needed when commission is > 0
+#--------------------------------------------------------------------------------------
 MARGIN_VEC = []
 if COMMISSION > 0:
     MARGIN_VEC.append('MARGIN_USD')
     data["MARGIN_USD"] = 1
-    for i, a in enumerate(sorted(ASSETS)):
+    for i, a in enumerate(sorted(COINS)):
         data["MARGIN_{}".format(a)] = 1 if a == "USD" else 0
         if "MARGIN_{}".format(a) not in MARGIN_VEC:
             MARGIN_VEC.append("MARGIN_{}".format(a))
     if ALLOW_SHORTS:
-        for i, a in enumerate(sorted(ASSETS)):
-            if a == "USD":
+        for i, a in enumerate(sorted(COINS)):
+            if a in ["USD", "USDT"]:
                 continue
             data["MARGIN_{}_S".format(a)] = 0
 
@@ -55,71 +68,102 @@ if ALLOW_SHORTS:
     x = list(MARGIN_VEC)
     for asset in x[1:]:
         MARGIN_VEC.append(asset+"_S")
-
-stmt  = "data['market_lag'] = (0"
-n_rws = 0
-cols2 = []
+#--------------------------------------------------------------------------------------
+# Create a list of X column names to use for modelling
+#--------------------------------------------------------------------------------------
+in_cols = []
 for c in data.columns:
-    if not INPUT_ASSET:
-        cols2.append(c)
-        if pattern_match("L_CLOSE_1_.*",c):
-            stmt += "+data['{}']".format(c)
-            n_rws += 1
+    if INPUT_COINS == []:
+        in_cols.append(c)
     else:
-        for a in set(INPUT_ASSET):
+        for a in set(INPUT_COINS):
             if a in c:
-                cols2.append(c)
-                if pattern_match("L_CLOSE_1_.*",c):
-                    stmt += "+data['{}']".format(c)
-                    n_rws += 1
-                    
-stmt += ")/{}".format(n_rws)
-exec(stmt)
+                in_cols.append(c)
 
-cols = []
+COLS_X = []
+for x in in_cols:
+    if "L_" in x or "REG" in x:
+        if "VOLUME" in x and INCLUDE_VOLUME == False:
+            continue
+        COLS_X.append(x)
+if COMMISSION != 0:
+    COLS_X += MARGIN_VEC
+#--------------------------------------------------------------------------------------
+# Create a list of Y column names to use for modelling
+#--------------------------------------------------------------------------------------             
+out_cols = []
 for c in data.columns:
-    if not ASSETS:
-        cols.append(c)
+    if COINS == []:
+        out_cols.append(c)
     else:
-        for a in set(ASSETS):
+        for a in set(COINS):
             if a in c:
-                cols.append(c)
+                out_cols.append(c)
             
 if ALLOW_SHORTS:
     short_cols = []
-    for c in cols:
+    for c in out_cols:
         if 'reward' in c:
             data[c+"_S"] = data[c].apply(lambda x : -x)
             short_cols.append(c+"_S")
-    cols += short_cols 
-    
-'''        
-all_reward_cols = [c for c in data.columns if pattern_match("reward_.*", c)]
-usd_rewards = []
-for i in range(len(data)):
-    row = data.iloc[i,:]
-    avg_mkt = row[all_reward_cols].describe()[1]
-    if avg_mkt < 0:
-        usd_rewards.append(-avg_mkt*0.5)
-    else:
-        usd_rewards.append(0)'''
-        
-data['reward_USD'] = 0
-
-if INCLUDE_VOLUME:
-    COLS_X = [x for x in cols2 if 'L_' in x or x == 'market_lag' or "REG" in x]
-    if COMMISSION != 0:
-        COLS_X = COLS_X + MARGIN_VEC
-else:
-    COLS_X = [x for x in cols2 if ('L_' in x and "VOLUME" not in x) in x or x == 'market_lag' or "REG" in x]
-    if COMMISSION != 0:
-        COLS_X = COLS_X + MARGIN_VEC
+    out_cols += short_cols 
 
 if ALLOW_SHORTS:
     COLS_Y = [x.replace("MARGIN", "reward") for x in MARGIN_VEC]
 else:
-    COLS_Y = ["reward_USD"] + sorted([y for y in cols if 'reward' in y and "USD" not in y])
+    COLS_Y = ["reward_USD"] + sorted([y for y in out_cols if 'reward' in y and "USD" not in y])
+#--------------------------------------------------------------------------------------
+# Defining the batch size and test length
+#--------------------------------------------------------------------------------------
+BATCH_SZ_MIN = round(0.8*len(data))#round(0.05*len(data))
+BATCH_SZ_MAX = round(0.8*len(data))#round(0.2*len(data))
+TEST_LEN     = round(0.2*len(data))
+IDX_MAX      = max(0, len(data) - TEST_LEN - BATCH_SZ_MAX - 1)
+#--------------------------------------------------------------------------------------
+# Normalizing the X columns. Scale using training data only
+#--------------------------------------------------------------------------------------
+print("Normalizing Data...", end="")
+for x in COLS_X:
+    median      = data[x].describe()[5]
+    data[x]     = data[x].apply(lambda x : median if np.isinf(x) or np.isnan(x) else x)
+scaler = sklearn.preprocessing.StandardScaler()
+scaler.fit( data[:IDX_MAX+BATCH_SZ_MAX] [COLS_X] )
+data[COLS_X] = scaler.transform(data[COLS_X])
+print("Done")
+#--------------------------------------------------------------------------------------
+# Apply PCA if set to True. Principle Components calculated using training data only
+#--------------------------------------------------------------------------------------
+if USE_PCA:
+    PCA_MODEL = sklearn.decomposition.PCA(PCA_COMPONENTS)
+    PCA_MODEL.fit(data[:IDX_MAX+BATCH_SZ_MAX][COLS_X])
+    Xs = pd.DataFrame(PCA_MODEL.transform(data[COLS_X]))
+    
+    Xs.columns = ["PCA_"+str(x) for x in range(1,len(Xs.columns)+1)]
+    data[Xs.columns] = Xs
+    COLS_X = list(Xs.columns) + (MARGIN_VEC if COMMISSION != 0 else [])
 
+    print(PCA_MODEL.explained_variance_)
+    print(PCA_MODEL.explained_variance_ratio_)
+    print(PCA_MODEL.explained_variance_ratio_.cumsum())
+#--------------------------------------------------------------------------------------
+# Generate Supervised Learning Predictions if set to True. This does not work for now
+#--------------------------------------------------------------------------------------
+if USE_SUPER:
+    pass
+    '''training = data[:IDX_MAX]
+    cols_to_add = []
+    for target in COLS_Y:
+        model = sklearn.ensemble.RandomForestRegressor()
+        model.fit(training[COLS_X], training[target])
+        newcol = "RF_{}".format(target)
+        data[newcol] = model.predict(data[COLS_X])
+        cols_to_add.append(newcol)
+    COLS_X += cols_to_add'''
+    
+#--------------------------------------------------------------------------------------
+# Transform rewards into discounted reward if enabled. "data" uses transformed 
+# rewards, "data_imm" uses raw, un-modified reward.
+#--------------------------------------------------------------------------------------
 if DISCOUNT:
     data_imm = data.copy()
     stmt = "data[COLS_Y] = data[COLS_Y]"
@@ -134,74 +178,40 @@ else:
 data = data.dropna(axis=0, how='any').reset_index(drop=True)
 if DISCOUNT:
     data_imm = data_imm[:-DISCOUNT_STEPS]
-
-#if not DISCOUNT or True:
-#    for c in COLS_Y:
-#        data[c] = data[c] - math.log10(1.004)
-#    data["reward_USD"] = 0
-
-BATCH_SZ_MIN = round(0.05*len(data))#round(0.05*len(data))
-BATCH_SZ_MAX = round(0.1*len(data))#round(0.2*len(data))
-TEST_LEN     = round(0.2*len(data))
-IDX_MAX      = max(0, len(data) - TEST_LEN - BATCH_SZ_MAX - 1)
-
-
-print("Normalizing Data...", end="")
-for x in COLS_X:
     
-    median      = data[x].describe()[5]
-    data[x]     = data[x].apply(lambda x : median if np.isinf(x) or np.isnan(x) else x)
-    data_imm[x] = data[x]
+'''for c in COLS_Y:
+    data[c] = data[c] - math.log10(1.004)
+data["reward_USD"] = 0'''
     
-scaler = sklearn.preprocessing.StandardScaler()
-scaler.fit(data[:IDX_MAX+BATCH_SZ_MAX][COLS_X])
-data[COLS_X] = scaler.transform(data[COLS_X])
-data_imm[COLS_X] = data[COLS_X]
-print("Done")
-
-if USE_PCA:
-    PCA_MODEL = sklearn.decomposition.PCA(PCA_COMPONENTS)
-    PCA_MODEL.fit(data[:IDX_MAX+BATCH_SZ_MAX][COLS_X])
-    Xs = pd.DataFrame(PCA_MODEL.transform(data[COLS_X]))
-    Xs.columns = ["PCA_"+str(x) for x in range(1,len(Xs.columns)+1)]
-    data[Xs.columns] = Xs
-    data_imm[Xs.columns] = Xs
-    if COMMISSION != 0:
-        COLS_X = list(Xs.columns) + MARGIN_VEC
-    else:
-        COLS_X = list(Xs.columns)
-    print(PCA_MODEL.explained_variance_)
-    print(PCA_MODEL.explained_variance_ratio_)
-    print(PCA_MODEL.explained_variance_ratio_.cumsum())
-
-if USE_SUPER:
-    training = data[:IDX_MAX]
-    cols_to_add = []
-    for target in COLS_Y:
-        model = sklearn.ensemble.RandomForestRegressor()
-        model.fit(training[COLS_X], training[target])
-        newcol = "RF_{}".format(target)
-        data[newcol] = model.predict(data[COLS_X])
-        data_imm[newcol] = data[newcol]
-        cols_to_add.append(newcol)
-    COLS_X += cols_to_add
-
 N_IN  = len(COLS_X)
 N_OUT = len(COLS_Y)
 
+#--------------------------------------------------------------------------------------
+#  
+#                                NEURAL NETWORK DESIGN
+#
+#--------------------------------------------------------------------------------------
+
+# Input / Output place holders
+X = tf.placeholder(tf.float32, [None, N_IN])
+X = tf.reshape(X, [-1, N_IN])
+# PrevW
+PREV_W = tf.placeholder(tf.float32, [None, N_OUT])
+# Actual Rewards
+Y_     = tf.placeholder(tf.float32, [None, N_OUT])
+#--------------------------------------------------------------------------------------
+# Define hidden layers
+#--------------------------------------------------------------------------------------
 # Define number of Neurons per layer
 K = 300 # Layer 1
 L = 300 # Layer 2
 M = 300 # Layer 3
 N = 300 # Layer 4
-O = 300  # Layer 5
 
 SDEV = 0.05
 
 # LAYER 1
-# Initialize weights, normal dist.
 W1 = tf.Variable(tf.random_normal([N_IN, K], stddev = SDEV))
-# Bias terms initialized to zero
 B1 = tf.Variable(tf.random_normal([K], stddev = SDEV))
 
 # LAYER 2
@@ -216,36 +226,22 @@ B3 = tf.Variable(tf.random_normal([M], stddev = SDEV))
 W4 = tf.Variable(tf.random_normal([M, N_OUT], stddev = SDEV))
 B4 = tf.Variable(tf.random_normal([N_OUT], stddev = SDEV))
 
-# LAYER 5
-W5 = tf.Variable(tf.random_normal([N, N_OUT], stddev = SDEV))
-B5 = tf.Variable(tf.random_normal([N_OUT], stddev = SDEV))
-
-# LAYER 6
-#W6 = tf.Variable(tf.random_normal([O, N_OUT], stddev = SDEV))
-#B6 = tf.Variable(tf.random_normal([N_OUT]))
-
-X = tf.placeholder(tf.float32, [None, N_IN])
-X = tf.reshape(X, [-1, N_IN])
-
+#--------------------------------------------------------------------------------------
+# Define Computation Graph
+#--------------------------------------------------------------------------------------
 # Feed forward. Output of previous is input to next
-# Activation function for final layer is Softmax for probabilties in the range [0,1]
-Y1 = tf.nn.relu(tf.matmul(X,  W1) + B1)
-Y2 = tf.nn.relu(tf.matmul(Y1, W2) + B2)
-Y3 = tf.nn.relu(tf.matmul(Y2, W3) + B3)
-Y = tf.nn.softmax(tf.matmul(Y3, W4) + B4)
-#Y5 = tf.nn.leaky_relu(tf.matmul(Y4, W5) + B5)
-#Y =  tf.nn.softmax(tf.matmul(Y4, W5) + B5)
-#Y  = (tf.matmul(Y4, W5) + B5)
-
-# PrevW
-PREV_W = tf.placeholder(tf.float32, [None, N_OUT])
-Y_     = tf.placeholder(tf.float32, [None, N_OUT])
-
+# Activation function for final layer is Softmax for portfolio weights in the range [0,1]
+H1 = tf.nn.relu(tf.matmul(X,  W1) + B1)
+H2 = tf.nn.relu(tf.matmul(H1, W2) + B2)
+H3 = tf.nn.relu(tf.matmul(H2, W3) + B3)
+Y  = tf.nn.softmax(tf.matmul(H3, W4) + B4)
+#--------------------------------------------------------------------------------------
+# Define Loss Function
+#--------------------------------------------------------------------------------------
 if COMMISSION == 0:
     loss = -tf.reduce_mean( tf.log(10**tf.reduce_sum (Y * Y_, axis=1) ) )
     tf_rewards = ( tf.log(tf.reduce_sum(Y * Y_, axis=1) ) )
 else:
-    #loss = -tf.reduce_mean( 10000000 *   (  (1-COMMISSION*(Y-PREV_W)**2) * (Y * 10**Y_)  ) )
     loss = -tf.reduce_mean  (   tf.log (
                                           tf.reduce_sum( ( 1-COMMISSION*tf.abs(Y-PREV_W) ) * (Y * 10**Y_), axis=1)
                                        )
@@ -283,7 +279,7 @@ print("Begin Learning...")
 #---------------------------------------------------------------------------------------------------
 for i in range(10000000):
     
-    if i % 200 == 0 and i != 0:
+    if i % 100 == 0 and i != 0:
         
         if COMMISSION != 0:
             prev_weights = [[1 if idx == 0 else 0 for idx in range(N_OUT)]]
@@ -320,10 +316,9 @@ for i in range(10000000):
         
     else:
         
-        idx      = round(random.random()**0.75*IDX_MAX)
+        idx      = round(random.random()**0.8*IDX_MAX)
         batch_sz = random.randint(BATCH_SZ_MIN, BATCH_SZ_MAX)
         sub_data = data.iloc[idx:idx+batch_sz, :].reset_index(drop=True)
-        #sub_data = data
         batch_X, batch_Y = (sub_data[COLS_X], sub_data[COLS_Y])
         
         if COMMISSION != 0:
@@ -354,12 +349,6 @@ for i in range(10000000):
                           Y_: np.reshape(batch_Y, (-1,N_OUT))}
             
         sess.run(train_step, feed_dict=train_data)
-        #lss_train = sess.run(loss,train_data)
-        #lss_test  = sess.run(loss,feed_imm)
-        #lss_train = 100 * math.exp(-lss_train) - 100
-        #lss_test  = 100 * math.exp(-lss_test) - 100
-        #print("{:<16} {:<16.6f} {:<16.6f}%".format(i, lss_train, lss_test))
-
 #---------------------------------------------------------------------------------------------------
 
 plt.plot(dat_rwds)
@@ -417,8 +406,8 @@ for val in y1:
     val = list(val)
     long_short[0].append(val[0])
     if ALLOW_SHORTS:
-        long_short[1].append(sum(val[1:N_ASSETS//2+1]))
-        long_short[2].append(sum(val[N_ASSETS//2+1:]))
+        long_short[1].append(sum(val[1:N_COINS//2+1]))
+        long_short[2].append(sum(val[N_COINS//2+1:]))
     else:
         long_short[1].append(sum(val[1:]))
 
