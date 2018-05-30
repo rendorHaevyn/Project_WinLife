@@ -349,13 +349,11 @@ for i in range(10000000):
                           Y_: np.reshape(batch_Y, (-1,N_OUT)),
                           PREV_W: np.reshape(prev_weights, (-1, N_OUT))}
             
-            sess.run(train_step, feed_dict=train_data)
-            
         else:
             train_data = {X:  np.reshape(batch_X, (-1,N_IN)), 
                           Y_: np.reshape(batch_Y, (-1,N_OUT))}
             
-        #sess.run(train_step, feed_dict=train_data)
+        sess.run(train_step, feed_dict=train_data)
         #lss_train = sess.run(loss,train_data)
         #lss_test  = sess.run(loss,feed_imm)
         #lss_train = 100 * math.exp(-lss_train) - 100
