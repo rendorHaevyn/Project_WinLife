@@ -252,7 +252,7 @@ else:
                  )
 
 # Optimizer
-LEARNING_RATE 	= 0.00005
+LEARNING_RATE 	= 0.0002
 optimizer 		= tf.train.AdamOptimizer(LEARNING_RATE)
 train_step 		= optimizer.minimize(loss)
 
@@ -293,7 +293,8 @@ for i in range(10000000):
                             Y_: np.reshape(b_y.iloc[r,:], (-1,N_OUT)),
                             PREV_W: np.reshape(prev_weights[-1], (-1, N_OUT))}
                 weights, y_vec  = sess.run([Y, Y_], feed_dict=feed_row)
-                w = (weights * 10** y_vec) / np.sum(weights * 10 ** y_vec)
+                y_vec_10 = (weights * 10 ** y_vec)
+                w = y_vec_10 / np.sum(y_vec_10)
                 prev_weights.append(w[0])
                 for index, a in enumerate(MARGIN_VEC):
                     b_x.set_value(r+1, a, w[0][index])
@@ -359,26 +360,21 @@ plt.show()
 if COMMISSION != 0:
     prev_weights = [[1 if idx == 0 else 0 for idx in range(N_OUT)]]
     stime = time.time()
-    test_dat.at[:,MARGIN_VEC] = prev_weights * len(test_dat)
     test_imm.at[:,MARGIN_VEC] = prev_weights * len(test_imm)
-    b_x = np.reshape(test_dat[COLS_X], (-1,N_IN))
-    b_y = np.reshape(test_dat[COLS_Y], (-1,N_OUT))
-    for r in range(len(test_dat) - 1):
+    b_x = np.reshape(test_imm[COLS_X], (-1,N_IN))
+    b_y = np.reshape(test_imm[COLS_Y], (-1,N_OUT))
+    for r in range(len(test_imm) - 1):
         feed_row = {X:  np.reshape(b_x.iloc[r,:], (-1,N_IN)),
                     Y_: np.reshape(b_y.iloc[r,:], (-1,N_OUT)),
                     PREV_W: np.reshape(prev_weights[-1], (-1, N_OUT))}
         weights, y_vec  = sess.run([Y, Y_], feed_dict=feed_row)
-        w = (weights * 10** y_vec) / np.sum(weights * 10 ** y_vec)
+        y_vec_10 = (weights * 10 ** y_vec)
+        w = y_vec_10 / np.sum(y_vec_10)
         prev_weights.append(w[0])
         for index, a in enumerate(MARGIN_VEC):
             b_x.set_value(r+1, a, w[0][index])
-            test_dat.set_value(r+1, a, w[0][index])
             test_imm.set_value(r+1, a, w[0][index])
         #print(r / (time.time() - stime))
-        
-    feed_dat = {X:  np.reshape(test_dat[COLS_X], (-1, N_IN)), 
-                Y_: np.reshape(test_dat[COLS_Y], (-1, N_OUT)),
-                PREV_W: np.reshape(prev_weights, (-1, N_OUT))}
                            
     feed_imm = {X:  np.reshape(test_imm[COLS_X], (-1, N_IN)), 
                 Y_: np.reshape(test_imm[COLS_Y], (-1, N_OUT)),
