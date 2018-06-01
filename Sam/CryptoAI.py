@@ -1,3 +1,4 @@
+from __future__ import print_function
 import numpy as np
 import random
 import pandas as pd
@@ -117,8 +118,8 @@ else:
 #--------------------------------------------------------------------------------------
 BATCH_SZ_MIN = 25
 BATCH_SZ_MAX = 50
-TEST_LEN     = round(0.2*len(data))
-IDX_MAX      = max(0, len(data) - TEST_LEN - BATCH_SZ_MAX - 1)
+TEST_LEN     = int(round(0.2*len(data)))
+IDX_MAX      = int(max(0, len(data) - TEST_LEN - BATCH_SZ_MAX - 1))
 #--------------------------------------------------------------------------------------
 # Normalizing the X columns. Scale using training data only
 #--------------------------------------------------------------------------------------
@@ -286,9 +287,8 @@ for epoch in range(10000000):
             b_y = np.reshape(test_dat[COLS_Y], (-1,N_OUT))
             #---------------------------------------------------------
             for r in range(len(test_dat) - 1):
-                
-                feed_row = {X:  np.reshape(b_x.iloc[r,:], (-1,N_IN)),
-                            Y_: np.reshape(b_y.iloc[r,:], (-1,N_OUT)),
+                feed_row = {X:  np.reshape(np.array(b_x.iloc[r,:]), (-1,N_IN)),
+                            Y_: np.reshape(np.array(b_y.iloc[r,:]), (-1,N_OUT)),
                             PREV_W: np.reshape(prev_weights[-1], (-1, N_OUT))}
                                                
                 weights, y_vec  = sess.run([Y, Y_], feed_dict=feed_row)
@@ -317,7 +317,7 @@ for epoch in range(10000000):
 
     #-----------------------------------------------------------------
         
-    idx      = round(random.random()**0.8*IDX_MAX)
+    idx      = int(round(random.random()**0.8*IDX_MAX))
     batch_sz = random.randint(BATCH_SZ_MIN, BATCH_SZ_MAX)
     sub_data = data.iloc[idx:idx+batch_sz, :].reset_index(drop=True)
     batch_X, batch_Y = (sub_data[COLS_X], sub_data[COLS_Y])
@@ -331,8 +331,8 @@ for epoch in range(10000000):
         b_x = np.reshape(batch_X, (-1,N_IN))
         b_y = np.reshape(batch_Y, (-1,N_OUT))
         for r in range(len(batch_X) - 1):
-            feed_row = {X: np.reshape(b_x.iloc[r,:], (-1,N_IN)),
-                        Y_: np.reshape(b_y.iloc[r,:], (-1,N_OUT)),
+            feed_row = {X: np.reshape(np.array(b_x.iloc[r,:]), (-1,N_IN)),
+                        Y_: np.reshape(np.array(b_y.iloc[r,:]), (-1,N_OUT)),
                         PREV_W: np.reshape(prev_weights[-1], (-1, N_OUT))}
             weights, y_vec  = sess.run([Y, Y_], feed_dict=feed_row)
             w = (weights * 10** y_vec) / np.sum(weights * 10 ** y_vec)
