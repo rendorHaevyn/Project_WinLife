@@ -135,6 +135,8 @@ print("Done")
 # Apply PCA if set to True. Principle Components calculated using training data only
 #--------------------------------------------------------------------------------------
 if USE_PCA:
+
+    print("PCA...",end="")
     PCA_MODEL = sklearn.decomposition.PCA(PCA_COMPONENTS)
     PCA_MODEL.fit(data[:IDX_MAX+BATCH_SZ_MAX][COLS_X])
     Xs = pd.DataFrame(PCA_MODEL.transform(data[COLS_X]))
@@ -143,9 +145,10 @@ if USE_PCA:
     data[Xs.columns] = Xs
     COLS_X = list(Xs.columns) + (PORT_W if COMMISSION != 0 else [])
 
-    print(PCA_MODEL.explained_variance_)
-    print(PCA_MODEL.explained_variance_ratio_)
-    print(PCA_MODEL.explained_variance_ratio_.cumsum())
+#    print(PCA_MODEL.explained_variance_)
+#    print(PCA_MODEL.explained_variance_ratio_)
+    print("Done")
+    print("Variance explained: {}".format(100*PCA_MODEL.explained_variance_ratio_.cumsum()[-1]))
 #--------------------------------------------------------------------------------------
 # Generate Supervised Learning Predictions if set to True. This does not work for now
 #--------------------------------------------------------------------------------------
