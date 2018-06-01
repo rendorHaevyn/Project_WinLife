@@ -34,10 +34,10 @@ USE_PCA        = True   # Use PCA Dimensionality Reduction
 PCA_COMPONENTS = 400     # Number of Principle Components to reduce down to
 USE_SUPER      = False   # Create new features using supervised learning
 INCLUDE_VOLUME = True    # Include Volume as a feature
-ALLOW_SHORTS   = False   # Allow Shorts or not
-DISCOUNT       = False   # Train on discounted rewards
+ALLOW_SHORTS   = True   # Allow Shorts or not
+DISCOUNT       = True   # Train on discounted rewards
 DISCOUNT_STEPS = 24      # Number of periods to look ahead for discounting
-GAMMA          = 0.9     # The discount factor
+GAMMA          = 0.66    # The discount factor
 #--------------------------------------------------------------------------------------
 # List of coins to trade. Set to [] to use all coins
 #--------------------------------------------------------------------------------------
@@ -234,7 +234,8 @@ B4 = tf.Variable(tf.random_normal([N_OUT], stddev = SDEV))
 H1 = tf.nn.relu(tf.matmul(X,  W1) + B1)
 H2 = tf.nn.relu(tf.matmul(H1, W2) + B2)
 H3 = tf.nn.relu(tf.matmul(H2, W3) + B3)
-Y  = tf.nn.softmax(tf.matmul(H3, W4) + B4)
+Y  = tf.nn.log_softmax(tf.matmul(H3, W4) + B4)
+Y = tf.sign(Y - tf.reduce_max(Y,axis=1,keep_dims=True)) + 1
 #--------------------------------------------------------------------------------------
 # Define Loss Function
 #--------------------------------------------------------------------------------------
@@ -441,7 +442,7 @@ print("Iteration, PrevW, Action, PriceChange, NewW, Reward")
 #------------------------------------------------------------------------------
 for i in range(len(y2)):
     
-    c = 0.0025
+    c = 0.002
     
     for j in range(len(w[i])):
         w[i][j] = max(w[i][j],0)
