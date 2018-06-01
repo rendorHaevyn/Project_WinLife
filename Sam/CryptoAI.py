@@ -30,7 +30,7 @@ print("{} rows & {} columns".format(len(data), len(data.columns)))
 # Manual Options
 #--------------------------------------------------------------------------------------
 COMMISSION     = 0.0025  # Commision % as a decimal to use in loss function
-USE_PCA        = False   # Use PCA Dimensionality Reduction
+USE_PCA        = True   # Use PCA Dimensionality Reduction
 PCA_COMPONENTS = 400     # Number of Principle Components to reduce down to
 USE_SUPER      = False   # Create new features using supervised learning
 INCLUDE_VOLUME = True    # Include Volume as a feature
@@ -50,14 +50,14 @@ N_COINS     = ( len(COINS) * 2 - 1 ) if ALLOW_SHORTS else len(COINS)
 #--------------------------------------------------------------------------------------
 # Create fields to store "Previous Weights" - Only needed when commission is > 0
 #--------------------------------------------------------------------------------------
-MARGIN_VEC = []
+PORT_W = []
 if COMMISSION > 0:
-    MARGIN_VEC.append('MARGIN_USD')
+    PORT_W.append('MARGIN_USD')
     data["MARGIN_USD"] = 1
     for i, a in enumerate(sorted(COINS)):
         data["MARGIN_{}".format(a)] = 1 if a == "USD" else 0
-        if "MARGIN_{}".format(a) not in MARGIN_VEC:
-            MARGIN_VEC.append("MARGIN_{}".format(a))
+        if "MARGIN_{}".format(a) not in PORT_W:
+            PORT_W.append("MARGIN_{}".format(a))
     if ALLOW_SHORTS:
         for i, a in enumerate(sorted(COINS)):
             if a in ["USD", "USDT"]:
@@ -65,9 +65,9 @@ if COMMISSION > 0:
             data["MARGIN_{}_S".format(a)] = 0
 
 if ALLOW_SHORTS:
-    x = list(MARGIN_VEC)
+    x = list(PORT_W)
     for asset in x[1:]:
-        MARGIN_VEC.append(asset+"_S")
+        PORT_W.append(asset+"_S")
 #--------------------------------------------------------------------------------------
 # Create a list of X column names to use for modelling
 #--------------------------------------------------------------------------------------
@@ -87,7 +87,7 @@ for x in in_cols:
             continue
         COLS_X.append(x)
 if COMMISSION != 0:
-    COLS_X += MARGIN_VEC
+    COLS_X += PORT_W
 #--------------------------------------------------------------------------------------
 # Create a list of Y column names to use for modelling
 #--------------------------------------------------------------------------------------             
@@ -109,14 +109,14 @@ if ALLOW_SHORTS:
     out_cols += short_cols 
 
 if ALLOW_SHORTS:
-    COLS_Y = [x.replace("MARGIN", "reward") for x in MARGIN_VEC]
+    COLS_Y = [x.replace("MARGIN", "reward") for x in PORT_W]
 else:
     COLS_Y = ["reward_USD"] + sorted([y for y in out_cols if 'reward' in y and "USD" not in y])
 #--------------------------------------------------------------------------------------
 # Defining the batch size and test length
 #--------------------------------------------------------------------------------------
-BATCH_SZ_MIN = round(0.8*len(data))#round(0.05*len(data))
-BATCH_SZ_MAX = round(0.8*len(data))#round(0.2*len(data))
+BATCH_SZ_MIN = 25
+BATCH_SZ_MAX = 50
 TEST_LEN     = round(0.2*len(data))
 IDX_MAX      = max(0, len(data) - TEST_LEN - BATCH_SZ_MAX - 1)
 #--------------------------------------------------------------------------------------
@@ -140,7 +140,7 @@ if USE_PCA:
     
     Xs.columns = ["PCA_"+str(x) for x in range(1,len(Xs.columns)+1)]
     data[Xs.columns] = Xs
-    COLS_X = list(Xs.columns) + (MARGIN_VEC if COMMISSION != 0 else [])
+    COLS_X = list(Xs.columns) + (PORT_W if COMMISSION != 0 else [])
 
     print(PCA_MODEL.explained_variance_)
     print(PCA_MODEL.explained_variance_ratio_)
@@ -203,12 +203,12 @@ Y_     = tf.placeholder(tf.float32, [None, N_OUT])
 # Define hidden layers
 #--------------------------------------------------------------------------------------
 # Define number of Neurons per layer
-K = 300 # Layer 1
-L = 300 # Layer 2
-M = 300 # Layer 3
-N = 300 # Layer 4
+K = 100 # Layer 1
+L = 100 # Layer 2
+M = 100 # Layer 3
+N = 100 # Layer 4
 
-SDEV = 0.05
+SDEV = 0.1
 
 # LAYER 1
 W1 = tf.Variable(tf.random_normal([N_IN, K], stddev = SDEV))
@@ -239,30 +239,24 @@ Y  = tf.nn.softmax(tf.matmul(H3, W4) + B4)
 # Define Loss Function
 #--------------------------------------------------------------------------------------
 if COMMISSION == 0:
-    loss = -tf.reduce_mean( tf.log(10**tf.reduce_sum (Y * Y_, axis=1) ) )
-    tf_rewards = ( tf.log(tf.reduce_sum(Y * Y_, axis=1) ) )
+    tensor_rwds = tf.log (10**tf.reduce_sum(Y * Y_, axis=1) )
+    loss        = -tf.reduce_mean( tensor_rwds )
 else:
-    loss = -tf.reduce_mean  (   tf.log (
-                                          tf.reduce_sum( ( 1-COMMISSION*tf.abs(Y-PREV_W) ) * (Y * 10**Y_), axis=1)
-                                       )
-                            )
-    tf_rewards = (  tf.log (
-                              tf.reduce_sum( ( 1-COMMISSION*tf.abs(Y-PREV_W) ) * (Y * 10**Y_), axis=1)
-                           )
-                 )
+    tensor_rwds = tf.log (tf.reduce_sum( ( 1-COMMISSION*tf.abs(Y-PREV_W) ) * (Y * 10**Y_), axis=1))
+    loss        = -tf.reduce_mean( tensor_rwds )
 
 # Optimizer
 LEARNING_RATE 	= 0.0002
 optimizer 		= tf.train.AdamOptimizer(LEARNING_RATE)
-train_step 		= optimizer.minimize(loss)
+train_step 	= optimizer.minimize(loss)
 
 test_imm   = data_imm.iloc[len(data_imm)-TEST_LEN:, :].reset_index(drop=True)
 test_dat   = data.iloc[len(data)-TEST_LEN:, :].reset_index(drop=True)
 
-feed_dat = {X: np.reshape(test_dat[COLS_X], (-1,N_IN)), 
+feed_dat = {X:  np.reshape(test_dat[COLS_X], (-1,N_IN)), 
             Y_: np.reshape(test_dat[COLS_Y], (-1, N_OUT))}
                                    
-feed_imm = {X: np.reshape(test_imm[COLS_X], (-1,N_IN)), 
+feed_imm = {X:  np.reshape(test_imm[COLS_X], (-1,N_IN)), 
             Y_: np.reshape(test_imm[COLS_Y], (-1, N_OUT))}
 
 init = tf.global_variables_initializer()
@@ -277,30 +271,35 @@ def eval_nn(lst, feed, len_test=1):
 
 print("Begin Learning...")
 #---------------------------------------------------------------------------------------------------
-for i in range(10000000):
+for epoch in range(10000000):
     
-    if i % 100 == 0 and i != 0:
+    # Measure loss on validation set every 100 epochs
+    if epoch % 100 == 0 or epoch < 10:
         
         if COMMISSION != 0:
             prev_weights = [[1 if idx == 0 else 0 for idx in range(N_OUT)]]
             stime = time.time()
-            test_dat.at[:,MARGIN_VEC] = prev_weights * len(test_dat)
-            test_imm.at[:,MARGIN_VEC] = prev_weights * len(test_imm)
+            test_dat.at[0,PORT_W] = prev_weights[-1]
+            test_imm.at[0,PORT_W] = prev_weights[-1]
             b_x = np.reshape(test_dat[COLS_X], (-1,N_IN))
             b_y = np.reshape(test_dat[COLS_Y], (-1,N_OUT))
+            #---------------------------------------------------------
             for r in range(len(test_dat) - 1):
+                
                 feed_row = {X:  np.reshape(b_x.iloc[r,:], (-1,N_IN)),
                             Y_: np.reshape(b_y.iloc[r,:], (-1,N_OUT)),
                             PREV_W: np.reshape(prev_weights[-1], (-1, N_OUT))}
+                                               
                 weights, y_vec  = sess.run([Y, Y_], feed_dict=feed_row)
                 y_vec_10 = (weights * 10 ** y_vec)
                 w = y_vec_10 / np.sum(y_vec_10)
                 prev_weights.append(w[0])
-                for index, a in enumerate(MARGIN_VEC):
-                    b_x.set_value(r+1, a, w[0][index])
-                    test_dat.set_value(r+1, a, w[0][index])
-                    test_imm.set_value(r+1, a, w[0][index])
+                
+                b_x.at[r+1,PORT_W]      = w[0]
+                test_dat.at[r+1,PORT_W] = w[0]
+                test_imm.at[r+1,PORT_W] = w[0]
                 #print(r / (time.time() - stime))
+            #---------------------------------------------------------
                 
             feed_dat = {X:  np.reshape(test_dat[COLS_X], (-1, N_IN)), 
                         Y_: np.reshape(test_dat[COLS_Y], (-1, N_OUT)),
@@ -313,43 +312,42 @@ for i in range(10000000):
         threading.Thread(target=eval_nn,args=(dat_rwds,feed_dat,len(test_dat))).start()
         threading.Thread(target=eval_nn,args=(imm_rwds,feed_imm,len(test_imm))).start()
         if dat_rwds and imm_rwds:
-            print("{:<16} {:<16.6f} {:<16.6f}%".format(i, dat_rwds[-1], imm_rwds[-1]))
+            print("{:<16} {:<16.6f} {:<16.6f}%".format(epoch, dat_rwds[-1], imm_rwds[-1]))
+
+    #-----------------------------------------------------------------
+        
+    idx      = round(random.random()**0.8*IDX_MAX)
+    batch_sz = random.randint(BATCH_SZ_MIN, BATCH_SZ_MAX)
+    sub_data = data.iloc[idx:idx+batch_sz, :].reset_index(drop=True)
+    batch_X, batch_Y = (sub_data[COLS_X], sub_data[COLS_Y])
+    
+    if COMMISSION != 0:
+        prev_weights = []
+        rand = np.random.random(N_OUT)
+        rand /= rand.sum()
+        prev_weights.append(list(rand))
+        batch_X.at[0,PORT_W] = prev_weights
+        b_x = np.reshape(batch_X, (-1,N_IN))
+        b_y = np.reshape(batch_Y, (-1,N_OUT))
+        for r in range(len(batch_X) - 1):
+            feed_row = {X: np.reshape(b_x.iloc[r,:], (-1,N_IN)),
+                        Y_: np.reshape(b_y.iloc[r,:], (-1,N_OUT)),
+                        PREV_W: np.reshape(prev_weights[-1], (-1, N_OUT))}
+            weights, y_vec  = sess.run([Y, Y_], feed_dict=feed_row)
+            w = (weights * 10** y_vec) / np.sum(weights * 10 ** y_vec)
+            prev_weights.append(w[0])
+            b_x.at[r+1,PORT_W] = w[0]
+                
+        batch_X = b_x
+        train_data = {X:  np.reshape(batch_X, (-1,N_IN)), 
+                      Y_: np.reshape(batch_Y, (-1,N_OUT)),
+                      PREV_W: np.reshape(prev_weights, (-1, N_OUT))}
         
     else:
+        train_data = {X:  np.reshape(batch_X, (-1,N_IN)), 
+                      Y_: np.reshape(batch_Y, (-1,N_OUT))}
         
-        idx      = round(random.random()**0.8*IDX_MAX)
-        batch_sz = random.randint(BATCH_SZ_MIN, BATCH_SZ_MAX)
-        sub_data = data.iloc[idx:idx+batch_sz, :].reset_index(drop=True)
-        batch_X, batch_Y = (sub_data[COLS_X], sub_data[COLS_Y])
-        
-        if COMMISSION != 0:
-            prev_weights = []
-            rand = np.random.random(N_OUT)
-            rand /= rand.sum()
-            prev_weights.append(list(rand))
-            batch_X.at[:,MARGIN_VEC] = prev_weights * len(batch_X)
-            b_x = np.reshape(batch_X, (-1,N_IN))
-            b_y = np.reshape(batch_Y, (-1,N_OUT))
-            for r in range(len(batch_X) - 1):
-                feed_row = {X: np.reshape(b_x.iloc[r,:], (-1,N_IN)),
-                            Y_: np.reshape(b_y.iloc[r,:], (-1,N_OUT)),
-                            PREV_W: np.reshape(prev_weights[-1], (-1, N_OUT))}
-                weights, y_vec  = sess.run([Y, Y_], feed_dict=feed_row)
-                w = (weights * 10** y_vec) / np.sum(weights * 10 ** y_vec)
-                prev_weights.append(w[0])
-                for index, a in enumerate(MARGIN_VEC):
-                    b_x.set_value(r+1, a, w[0][index])
-                    
-            batch_X = b_x
-            train_data = {X:  np.reshape(batch_X, (-1,N_IN)), 
-                          Y_: np.reshape(batch_Y, (-1,N_OUT)),
-                          PREV_W: np.reshape(prev_weights, (-1, N_OUT))}
-            
-        else:
-            train_data = {X:  np.reshape(batch_X, (-1,N_IN)), 
-                          Y_: np.reshape(batch_Y, (-1,N_OUT))}
-            
-        sess.run(train_step, feed_dict=train_data)
+    sess.run(train_step, feed_dict=train_data)
 #---------------------------------------------------------------------------------------------------
 
 plt.plot(dat_rwds)
@@ -360,7 +358,7 @@ plt.show()
 if COMMISSION != 0:
     prev_weights = [[1 if idx == 0 else 0 for idx in range(N_OUT)]]
     stime = time.time()
-    test_imm.at[:,MARGIN_VEC] = prev_weights * len(test_imm)
+    test_imm.at[:,PORT_W] = prev_weights * len(test_imm)
     b_x = np.reshape(test_imm[COLS_X], (-1,N_IN))
     b_y = np.reshape(test_imm[COLS_Y], (-1,N_OUT))
     for r in range(len(test_imm) - 1):
@@ -371,20 +369,20 @@ if COMMISSION != 0:
         y_vec_10 = (weights * 10 ** y_vec)
         w = y_vec_10 / np.sum(y_vec_10)
         prev_weights.append(w[0])
-        for index, a in enumerate(MARGIN_VEC):
-            b_x.set_value(r+1, a, w[0][index])
-            test_imm.set_value(r+1, a, w[0][index])
+        b_x.at[r+1,PORT_W]      = w[0]
+        test_dat.at[r+1,PORT_W] = w[0]
+        test_imm.at[r+1,PORT_W] = w[0]
         #print(r / (time.time() - stime))
                            
     feed_imm = {X:  np.reshape(test_imm[COLS_X], (-1, N_IN)), 
                 Y_: np.reshape(test_imm[COLS_Y], (-1, N_OUT)),
                 PREV_W: np.reshape(prev_weights, (-1, N_OUT))}
 
-    y1, y2, pw, f_rewards, f_loss = sess.run([Y, Y_, PREV_W, tf_rewards, loss], 
+    y1, y2, pw, f_rewards, f_loss = sess.run([Y, Y_, PREV_W, tensor_rwds, loss], 
                                          feed_dict = feed_imm)
 else:
     
-    y1, y2, f_rewards, f_loss = sess.run([Y, Y_, tf_rewards, loss], 
+    y1, y2, f_rewards, f_loss = sess.run([Y, Y_, tensor_rwds, loss], 
                                          feed_dict = feed_imm)
 y3 = y1 * y2
 prof = [0]
@@ -433,24 +431,17 @@ def showArray(arr, decimals = 3):
 
 w = list(y1)
 
-assets    = len(w[0])   # Number of assets
-n_actions = len(w)      # Number of actions
-y = list(y2)
-
-rewards     = []   # All Rewards     (Multiplicative)
-log_rewards = []   # All Log Rewards (Additive)
-prevW       = w[0] # Weights from previous period
+rewards     = []    # All Rewards     (Multiplicative)
+log_rewards = []    # All Log Rewards (Additive)
+prevW       = pw[0] # Weights from previous period
 
 STEP = 1
 
 print("Iteration, PrevW, Action, PriceChange, NewW, Reward")
 #------------------------------------------------------------------------------
-for i, reward in enumerate(y):
+for i in range(len(y2)):
     
     c = 0.0025
-    
-    if i >= len(y):
-        break
     
     for j in range(len(w[i])):
         w[i][j] = max(w[i][j],0)
@@ -458,25 +449,24 @@ for i, reward in enumerate(y):
     if i % STEP == 0:
         cw = [x for x in w[i]]
         
-    action = w[i] # The new weights are our action
     rw     = 0    # Reward for this time step
 
     # Iterate through each asset and add each reward to the net reward
     #----------------------------------------------------------------
-    for asset in range(assets):
+    for asset in range(len(cw)):
 
         # Transaction Cost
         tc       = (1 - c * abs((cw[asset] - prevW[asset])**1))
         if i % STEP != 0:
             tc = 1
-        mult     = (10**y[i][asset] - 1) + 1
+        mult     = (10**y2[i][asset] - 1) + 1
             
         rw_asset = tc * (cw[asset]) * mult 
         rw      += rw_asset
     #----------------------------------------------------------------
 
     # Calculate what new weights will be after price move
-    newW = [cw[A] * 10**y[i][A] for A in range(assets)]
+    newW = [cw[A] * 10**y2[i][A] for A in range(len(cw))]
     newW = [x/sum(newW) for x in newW]
     
     #print(i, showArray(prevW), "-->", showArray(w[i]), "*", showArray(y[i]), "=", showArray(newW), " {{ {}{:.3f}% }}".format("+" if rw >= 1 else "", 100*rw-100))
@@ -484,9 +474,10 @@ for i, reward in enumerate(y):
     prevW = newW
     cw    = newW
     rewards.append(rw)
-    log_rewards.append(math.log(rw))
+    log_rewards.append(math.log10(rw))
     
 plt.plot(pd.Series(log_rewards).cumsum())
+plt.plot(pd.Series(f_rewards).apply(lambda x : math.log10(math.exp(x))).cumsum())
 plt.plot(pd.Series(test_imm.close_BTC / test_imm.close_BTC[0]).apply(lambda x : math.log10(x)))
 #plt.plot(prof)
 plt.show()
