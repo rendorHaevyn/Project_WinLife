@@ -13,6 +13,8 @@ from matplotlib import pyplot as plt
 import tensorflow as tf
 import re
 import time
+#tensorboard logs path
+logs_path = "logs"
 
 # Utility Function to return True / False regex matching
 def pattern_match(patt, string):
@@ -250,9 +252,13 @@ else:
     tensor_rwds = tf.log (tf.reduce_sum( ( 1-COMMISSION*tf.abs(Y-PREV_W) ) * (Y * 10**Y_), axis=1))
     loss        = -tf.reduce_mean( tensor_rwds )
 
+tf.summary.scalar("loss",loss)
+#tf.summary.scalar("tensor_rwds",[tensor_rwds])
+summary_op = tf.summary.merge_all()
+
 # Optimizer
 LEARNING_RATE 	= 0.0002
-optimizer 		= tf.train.AdamOptimizer(LEARNING_RATE)
+optimizer 	= tf.train.AdamOptimizer(LEARNING_RATE)
 train_step 	= optimizer.minimize(loss)
 
 test_imm   = data_imm.iloc[len(data_imm)-TEST_LEN:, :].reset_index(drop=True)
@@ -267,6 +273,7 @@ feed_imm = {X:  np.reshape(test_imm[COLS_X], (-1,N_IN)),
 init = tf.global_variables_initializer()
 sess = tf.Session()
 sess.run(init)
+writer = tf.summary.FileWriter(logs_path,graph=tf.get_default_graph())
 
 dat_rwds, imm_rwds = [], []
 def eval_nn(lst, feed, len_test=1):
@@ -351,7 +358,8 @@ for epoch in range(10000000):
         train_data = {X:  np.reshape(batch_X, (-1,N_IN)), 
                       Y_: np.reshape(batch_Y, (-1,N_OUT))}
         
-    sess.run(train_step, feed_dict=train_data)
+    _, summary = sess.run([train_step,summary_op], feed_dict=train_data)
+    writer.add_summary(summary,epoch)
 #---------------------------------------------------------------------------------------------------
 
 plt.plot(dat_rwds)
