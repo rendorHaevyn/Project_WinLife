@@ -93,28 +93,24 @@ if COMMISSION != 0:
     COLS_X += PORT_W
 #--------------------------------------------------------------------------------------
 # Create a list of Y column names to use for modelling
-#--------------------------------------------------------------------------------------             
-out_cols = []
-for c in data.columns:
-    if COINS == []:
-        out_cols.append(c)
-    else:
-        for a in set(COINS):
-            if a in c:
-                out_cols.append(c)
-            
-if ALLOW_SHORTS:
-    short_cols = []
-    for c in out_cols:
-        if 'reward' in c:
-            data[c+"_S"] = data[c].apply(lambda x : -x)
-            short_cols.append(c+"_S")
-    out_cols += short_cols 
+#--------------------------------------------------------------------------------------
 
+COLS_Y = ["reward_USD"]
+for c in data.columns:
+    added = False
+    if 'reward' in c and 'USD' not in c:
+        if COINS == []:
+            COLS_Y += [c]
+            added = True
+        else:
+            for a in set(COINS):
+                if a in c:
+                    COLS_Y += [c]
+                    added = True
+        if added:
+            data[c+"_S"] = data[c].apply(lambda x : -x)
 if ALLOW_SHORTS:
-    COLS_Y = [x.replace("MARGIN", "reward") for x in PORT_W]
-else:
-    COLS_Y = ["reward_USD"] + sorted([y for y in out_cols if 'reward' in y and "USD" not in y])
+    COLS_Y += ["{}_S".format(y) for y in COLS_Y[1:]]
 #--------------------------------------------------------------------------------------
 # Defining the batch size and test length
 #--------------------------------------------------------------------------------------
@@ -286,7 +282,7 @@ print("Begin Learning...")
 for epoch in range(10000000):
     
     # Measure loss on validation set every 100 epochs
-    if epoch % 100 == 0 or epoch < 10:
+    if epoch % 100 == 0:
         
         if COMMISSION != 0:
             prev_weights = [[1 if idx == 0 else 0 for idx in range(N_OUT)]]
@@ -341,13 +337,19 @@ for epoch in range(10000000):
         b_x = np.reshape(batch_X, (-1,N_IN))
         b_y = np.reshape(batch_Y, (-1,N_OUT))
         for r in range(len(batch_X) - 1):
-            feed_row = {X: np.reshape(np.array(b_x.iloc[r,:]), (-1,N_IN)),
-                        Y_: np.reshape(np.array(b_y.iloc[r,:]), (-1,N_OUT)),
-                        PREV_W: np.reshape(prev_weights[-1], (-1, N_OUT))}
-            weights, y_vec  = sess.run([Y, Y_], feed_dict=feed_row)
-            w = (weights * 10** y_vec) / np.sum(weights * 10 ** y_vec)
-            prev_weights.append(w[0])
-            b_x.at[r+1,PORT_W] = w[0]
+            if random.random() < 0.03:
+                rand = np.random.random(N_OUT)
+                rand /= rand.sum()
+                prev_weights.append(rand)
+                b_x.at[r+1,PORT_W] = rand
+            else:
+                feed_row = {X: np.reshape(np.array(b_x.iloc[r,:]), (-1,N_IN)),
+                            Y_: np.reshape(np.array(b_y.iloc[r,:]), (-1,N_OUT)),
+                            PREV_W: np.reshape(prev_weights[-1], (-1, N_OUT))}
+                weights, y_vec  = sess.run([Y, Y_], feed_dict=feed_row)
+                w = (weights * 10** y_vec) / np.sum(weights * 10 ** y_vec)
+                prev_weights.append(w[0])
+                b_x.at[r+1,PORT_W] = w[0]
                 
         batch_X = b_x
         train_data = {X:  np.reshape(batch_X, (-1,N_IN)), 
