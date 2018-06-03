@@ -236,7 +236,7 @@ B4 = tf.Variable(tf.random_normal([N_OUT], stddev = SDEV))
 H1 = tf.nn.relu(tf.matmul(X,  W1) + B1)
 H2 = tf.nn.relu(tf.matmul(H1, W2) + B2)
 H3 = tf.nn.relu(tf.matmul(H2, W3) + B3)
-Y  = tf.nn.log_softmax(tf.matmul(H3, W4) + B4)
+Y  = tf.nn.softmax(tf.matmul(H3, W4) + B4)
 Y_MAX = tf.sign(Y - tf.reduce_max(Y,axis=1,keep_dims=True)) + 1
 #--------------------------------------------------------------------------------------
 # Define Loss Function
