@@ -25,26 +25,25 @@ def pattern_match(patt, string):
 #--------------------------------------------------------------------------------------
 print("Loading Data...", end="")
 data_raw = pd.read_csv("M15/ALL.csv").dropna(axis=0, how='any').reset_index(drop=True)
-data     = data_raw[data_raw['date'] > 1514466000].reset_index(drop=True)
-data     = data.drop('date', axis=1)
+data     = data_raw.drop('date', axis=1)
 data['reward_USD'] = 0
 print("{} rows & {} columns".format(len(data), len(data.columns)))
 #--------------------------------------------------------------------------------------
 # Manual Options
 #--------------------------------------------------------------------------------------
-COMMISSION     = 0.0025  # Commision % as a decimal to use in loss function
+COMMISSION     = 0.003  # Commision % as a decimal to use in loss function
 USE_PCA        = True   # Use PCA Dimensionality Reduction
 PCA_COMPONENTS = 400     # Number of Principle Components to reduce down to
 USE_SUPER      = False   # Create new features using supervised learning
 INCLUDE_VOLUME = True    # Include Volume as a feature
-ALLOW_SHORTS   = True   # Allow Shorts or not
-DISCOUNT       = True   # Train on discounted rewards
+ALLOW_SHORTS   = False   # Allow Shorts or not
+DISCOUNT       = False   # Train on discounted rewards
 DISCOUNT_STEPS = 24      # Number of periods to look ahead for discounting
 GAMMA          = 0.66    # The discount factor
 #--------------------------------------------------------------------------------------
 # List of coins to trade. Set to [] to use all coins
 #--------------------------------------------------------------------------------------
-COINS       = ['USD', 'BCH', 'XRP', 'XMR', 'LTC']
+COINS       = ['USD', 'BCH', 'BTC', 'DASH', 'ETC', 'ETH', 'LTC', 'XMR', 'XRP', 'ZEC']
 # List of coins data to use as input variables. Set to [] to use all coins
 #--------------------------------------------------------------------------------------
 INPUT_COINS = []
@@ -108,14 +107,14 @@ for c in data.columns:
                     COLS_Y += [c]
                     added = True
         if added:
-            data[c+"_S"] = data[c].apply(lambda x : -x)
+            data[c+"_S"] = data[c].apply(lambda x : math.log10(2-10**x))
 if ALLOW_SHORTS:
     COLS_Y += ["{}_S".format(y) for y in COLS_Y[1:]]
 #--------------------------------------------------------------------------------------
 # Defining the batch size and test length
 #--------------------------------------------------------------------------------------
-BATCH_SZ_MIN = 25
-BATCH_SZ_MAX = 50
+BATCH_SZ_MIN = 100
+BATCH_SZ_MAX = 200
 TEST_LEN     = int(round(0.2*len(data)))
 IDX_MAX      = int(max(0, len(data) - TEST_LEN - BATCH_SZ_MAX - 1))
 #--------------------------------------------------------------------------------------
@@ -228,6 +227,12 @@ B3 = tf.Variable(tf.random_normal([M], stddev = SDEV))
 W4 = tf.Variable(tf.random_normal([M, N_OUT], stddev = SDEV))
 B4 = tf.Variable(tf.random_normal([N_OUT], stddev = SDEV))
 
+reg_losses =  tf.nn.l2_loss(W1) + tf.nn.l2_loss(W2) + tf.nn.l2_loss(W3)
+reg_losses += tf.nn.l2_loss(B1) + tf.nn.l2_loss(B2) + tf.nn.l2_loss(B3)
+
+# Magic number is around 0.0001
+lambda_reg = 0.0001
+
 #--------------------------------------------------------------------------------------
 # Define Computation Graph
 #--------------------------------------------------------------------------------------
@@ -235,18 +240,24 @@ B4 = tf.Variable(tf.random_normal([N_OUT], stddev = SDEV))
 # Activation function for final layer is Softmax for portfolio weights in the range [0,1]
 H1 = tf.nn.relu(tf.matmul(X,  W1) + B1)
 H2 = tf.nn.relu(tf.matmul(H1, W2) + B2)
-H3 = tf.nn.relu(tf.matmul(H2, W3) + B3)
-Y  = tf.nn.softmax(tf.matmul(H3, W4) + B4)
-Y_MAX = tf.sign(Y - tf.reduce_max(Y,axis=1,keep_dims=True)) + 1
+DH2 = tf.nn.dropout(H2, 0.9)
+H3 = tf.nn.relu(tf.matmul(DH2, W3) + B3)
+DH3 = tf.nn.dropout(H2, 0.9)
+Y  = tf.nn.softmax(tf.matmul(DH3, W4) + B4)
+#Y_MAX = tf.sign(Y - tf.reduce_max(Y,axis=1,keep_dims=True)) + 1
 #--------------------------------------------------------------------------------------
 # Define Loss Function
 #--------------------------------------------------------------------------------------
 if COMMISSION == 0:
+    weight_moves = tf.reduce_mean(tf.reduce_sum(tf.abs(Y[1:] - Y[:-1]), axis=1))
     tensor_rwds = tf.log (10**tf.reduce_sum(Y * Y_, axis=1) )
-    loss        = -tf.reduce_mean( tensor_rwds )
+    reward      = tf.reduce_sum(tensor_rwds)
+    loss        = -tf.reduce_mean( tensor_rwds ) + tf.log(weight_moves)*0.0002 + lambda_reg * reg_losses
 else:
+    weight_moves = tf.reduce_mean(tf.reduce_sum(tf.abs(Y[1:] - Y[:-1]), axis=1))
     tensor_rwds = tf.log (tf.reduce_sum( ( 1-COMMISSION*tf.abs(Y-PREV_W) ) * (Y * 10**Y_), axis=1))
-    loss        = -tf.reduce_mean( tensor_rwds )
+    reward      = tf.reduce_sum( tensor_rwds )
+    loss        = -tf.reduce_mean( tensor_rwds ) + lambda_reg * reg_losses
 
 tf.summary.scalar("loss",loss)
 #tf.summary.scalar("tensor_rwds",[tensor_rwds])
@@ -271,18 +282,13 @@ sess = tf.Session()
 sess.run(init)
 writer = tf.summary.FileWriter(logs_path,graph=tf.get_default_graph())
 
-dat_rwds, imm_rwds = [], []
-def eval_nn(lst, feed, len_test=1):
-    rwd = sess.run(loss, feed_dict=feed)
-    rwd = 100 * math.exp(-rwd * len_test) - 100
-    lst.append(rwd)
-
+dat_rwds, imm_rwds, dat_losses, imm_losses = [], [], [], []
 print("Begin Learning...")
 #---------------------------------------------------------------------------------------------------
 for epoch in range(10000000):
     
     # Measure loss on validation set every 100 epochs
-    if epoch % 100 == 0:
+    if epoch % 500 == 0:
         
         if COMMISSION != 0:
             prev_weights = [[1 if idx == 0 else 0 for idx in range(N_OUT)]]
@@ -316,10 +322,15 @@ for epoch in range(10000000):
                         Y_: np.reshape(test_imm[COLS_Y], (-1, N_OUT)),
                         PREV_W: np.reshape(prev_weights, (-1, N_OUT))}
                 
-        threading.Thread(target=eval_nn,args=(dat_rwds,feed_dat,len(test_dat))).start()
-        threading.Thread(target=eval_nn,args=(imm_rwds,feed_imm,len(test_imm))).start()
-        if dat_rwds and imm_rwds:
-            print("{:<16} {:<16.6f} {:<16.6f}%".format(epoch, dat_rwds[-1], imm_rwds[-1]))
+        d_rwd, d_loss = sess.run([reward, loss], feed_dict=feed_dat)
+        i_rwd, i_loss = sess.run([reward, loss], feed_dict=feed_imm)
+        
+        dat_rwds.append(math.exp(d_rwd))
+        imm_rwds.append(math.exp(i_rwd))
+        dat_losses.append(d_loss)
+        imm_losses.append(i_loss)
+        print("Epoch {:<9} Loss: {:<12.6f} {:<12.6f} Reward: {:<12.6f} {:<12.6f}".format\
+              (epoch, dat_losses[-1], dat_losses[-1], dat_rwds[-1], imm_rwds[-1]))
 
     #-----------------------------------------------------------------
         
@@ -360,8 +371,12 @@ for epoch in range(10000000):
         train_data = {X:  np.reshape(batch_X, (-1,N_IN)), 
                       Y_: np.reshape(batch_Y, (-1,N_OUT))}
         
-    _, summary = sess.run([train_step,summary_op], feed_dict=train_data)
-    writer.add_summary(summary,epoch)
+    #_, summary = sess.run([train_step,summary_op], feed_dict=train_data)
+    #a_rwd = sess.run(reward, feed_dict=train_data)
+    step = sess.run(train_step, feed_dict=train_data)
+    #a_rwd2 = sess.run(reward, feed_dict=train_data)
+    #print("Epoch {:<12} Reward: {:<12.6f} ---> {:<12.6f}".format(epoch, a_rwd, a_rwd2))
+    #writer.add_summary(summary,epoch)
 #---------------------------------------------------------------------------------------------------
 
 plt.plot(dat_rwds)
@@ -447,7 +462,7 @@ w = list(y1)
 
 rewards     = []    # All Rewards     (Multiplicative)
 log_rewards = []    # All Log Rewards (Additive)
-prevW       = pw[0] # Weights from previous period
+prevW       = [1] + [0] * (N_OUT - 1) # Weights from previous period
 
 STEP = 1
 
@@ -455,7 +470,7 @@ print("Iteration, PrevW, Action, PriceChange, NewW, Reward")
 #------------------------------------------------------------------------------
 for i in range(len(y2)):
     
-    c = 0.002
+    c = 0.0025
     
     for j in range(len(w[i])):
         w[i][j] = max(w[i][j],0)
