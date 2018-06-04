@@ -25,7 +25,7 @@ def pattern_match(patt, string):
 #--------------------------------------------------------------------------------------
 print("Loading Data...", end="")
 data_raw = pd.read_csv("M15/ALL.csv").dropna(axis=0, how='any').reset_index(drop=True)
-data     = data_raw[data_raw['date'] > 1514466000]
+data     = data_raw[data_raw['date'] > 1514466000].reset_index(drop=True)
 data     = data.drop('date', axis=1)
 data['reward_USD'] = 0
 print("{} rows & {} columns".format(len(data), len(data.columns)))
