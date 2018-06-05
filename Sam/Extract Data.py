@@ -1,4 +1,3 @@
-from __future__ import print_function
 import json
 import time
 import hmac,hashlib
@@ -26,7 +25,7 @@ def ExtractData(N_LAGS=5):
 
     JUNE_1_2017 = 1496275200
     NOV_1_2017 = 1509454800
-    START_TIME = NOV_1_2017
+    START_TIME = JUNE_1_2017
 
     tickers = []
     for T in ALL_TICKERS:
@@ -53,7 +52,7 @@ def ExtractData(N_LAGS=5):
     highmap = {86400 : 900,  14400 : 300,  7200 : 300,  1800 : 300,   900 : 300,   300 : 300 }
 
     SHIFT_POINTS_HOURS = [24 * 30, 24 * 14, 24 * 7, 24 * 3, 24, 0]
-    REG_HOURS          = [24 * 14, 24 * 7, 24 * 3, 24, 4, 2]
+    REG_HOURS          = [24 * 14, 24 * 7, 24 * 3, 24, 12, 4, 2, 1]
 
     CALC_R2 = False
 
@@ -73,13 +72,13 @@ def ExtractData(N_LAGS=5):
                 except Exception as error:
                     print(error)
             df = pd.DataFrame(data)
-            df['reward'] = df['close'].shift(-1) / df['close'] - 1
-            df['reward'] = df.reward.apply(lambda x : math.log(x+1, 10))
+            df['reward'] = df['close'].shift(-1) / df['close']
+            df['reward'] = df.reward.apply(lambda x : math.log10(x))
 
             if CALC_R2:
                 m5 =   pd.DataFrame(POL.returnChartData(TICK,highmap[tf],0,tm))
-                m5['reward'] = m5['close'].shift(0) / m5['close'].shift(1) - 1
-                m5['reward'] = m5.reward.apply(lambda x : math.log(x+1, 10))
+                m5['reward'] = m5['close'].shift(0) / m5['close'].shift(1)
+                m5['reward'] = m5.reward.apply(lambda x : math.log10(x))
                 
                 r2 = list(df.reward)
                 if tf > 300:
@@ -191,4 +190,4 @@ def ExtractData(N_LAGS=5):
                 merged = merged.merge(df, how='inner', on='date')
         merged.to_csv("{}/{}.csv".format(tmap[tf], "ALL"), index=False)
 
-ExtractData(20)
+ExtractData(30)
