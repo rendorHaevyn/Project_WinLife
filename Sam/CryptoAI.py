@@ -238,12 +238,13 @@ lambda_reg = 0.0001
 #--------------------------------------------------------------------------------------
 # Feed forward. Output of previous is input to next
 # Activation function for final layer is Softmax for portfolio weights in the range [0,1]
-H1 = tf.nn.relu(tf.matmul(X,  W1) + B1)
-H2 = tf.nn.relu(tf.matmul(H1, W2) + B2)
+H1  = tf.nn.relu(tf.matmul(X,  W1) + B1)
+DH1 = tf.nn.dropout(H1, 0.9)
+H2  = tf.nn.relu(tf.matmul(DH1, W2) + B2)
 DH2 = tf.nn.dropout(H2, 0.9)
-H3 = tf.nn.relu(tf.matmul(DH2, W3) + B3)
+H3  = tf.nn.relu(tf.matmul(DH2, W3) + B3)
 DH3 = tf.nn.dropout(H2, 0.9)
-Y  = tf.nn.softmax(tf.matmul(DH3, W4) + B4)
+Y   = tf.nn.softmax(tf.matmul(DH3, W4) + B4)
 #Y_MAX = tf.sign(Y - tf.reduce_max(Y,axis=1,keep_dims=True)) + 1
 #--------------------------------------------------------------------------------------
 # Define Loss Function
