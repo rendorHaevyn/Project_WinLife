@@ -13,12 +13,17 @@ from matplotlib import pyplot as plt
 import tensorflow as tf
 import re
 import time
+import pickle
 #tensorboard logs path
 logs_path = "logs"
 
 # Utility Function to return True / False regex matching
 def pattern_match(patt, string):
     return re.findall(patt, string) != []
+def save_memory(obj, path):
+    return pickle.dump(obj, open(path, "wb"))
+def load_memory(path):
+    return pickle.load(open(path, "rb"))
 
 #--------------------------------------------------------------------------------------
 # Read in the price data
