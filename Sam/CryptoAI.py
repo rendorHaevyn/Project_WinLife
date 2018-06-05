@@ -140,7 +140,7 @@ scaler = sklearn.preprocessing.StandardScaler()
 scaler.fit( data[:IDX_MAX+BATCH_SZ_MAX] [COLS_X] )
 data[COLS_X] = scaler.transform(data[COLS_X])
 if SAVE_MODELS:
-    live_scaler = sklearn.preprocessing.StandardScale()
+    live_scaler = sklearn.preprocessing.StandardScaler()
     live_scaler.fit( data[SAVE_IDX:] [COLS_X] )
     save_memory(live_scaler, TRADING_PATH+"/Scaler.save")
     save_memory(COLS_X, TRADING_PATH+"/COLS_X_ORIG.save")
@@ -375,7 +375,7 @@ for epoch in range(10000000):
         b_x = np.reshape(batch_X, (-1,N_IN))
         b_y = np.reshape(batch_Y, (-1,N_OUT))
         for r in range(len(batch_X) - 1):
-            if random.random() < 0.03:
+            if random.random() < 0.03 or True:
                 rand = np.random.random(N_OUT)
                 rand /= rand.sum()
                 prev_weights.append(rand)
