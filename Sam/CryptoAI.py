@@ -543,6 +543,7 @@ plt.plot(pd.Series(test_imm.close_BTC / test_imm.close_BTC[0]).apply(lambda x : 
 plt.show()
 
 if SAVE_MODELS:
-    answer = input("Do you want to save the Neural Network? (Y/N)")
+    # This doesn't work atm
+    pass'''answer = input("Do you want to save the Neural Network? (Y/N)")
     if "Y" in answer.upper():
-        save_memory(sess, TRADING_PATH+"/NN.save")
+        save_memory(sess, TRADING_PATH+"/NN.save")'''
