@@ -20,8 +20,10 @@ logs_path = "logs"
 # Utility Function to return True / False regex matching
 def pattern_match(patt, string):
     return re.findall(patt, string) != []
+# Utility Function to save objects in memory to a file
 def save_memory(obj, path):
     return pickle.dump(obj, open(path, "wb"))
+# Utility Function to load objects from the harddisk
 def load_memory(path):
     return pickle.load(open(path, "rb"))
 
@@ -42,9 +44,21 @@ PCA_COMPONENTS = 400     # Number of Principle Components to reduce down to
 USE_SUPER      = False   # Create new features using supervised learning
 INCLUDE_VOLUME = True    # Include Volume as a feature
 ALLOW_SHORTS   = False   # Allow Shorts or not
-DISCOUNT       = False   # Train on discounted rewards
+DISCOUNT       = True   # Train on discounted rewards
 DISCOUNT_STEPS = 24      # Number of periods to look ahead for discounting
-GAMMA          = 0.66    # The discount factor
+GAMMA          = 0.25    # The discount factor
+
+SAVE_MODELS    = True
+TRADING_PATH   = "Live Trading"
+SAVE_LENGTH    = 0.33    # Save all pre-processing models from this percentage of raw data onwards
+#--------------------------------------------------------------------------------------
+# Defining the batch size and test length
+#--------------------------------------------------------------------------------------
+BATCH_SZ_MIN = 100
+BATCH_SZ_MAX = 200
+TEST_LEN     = int(round(0.2*len(data)))
+IDX_MAX      = int(max(0, len(data) - TEST_LEN - BATCH_SZ_MAX - 1))
+SAVE_IDX     = int(round(SAVE_LENGTH * len(data_raw)))
 #--------------------------------------------------------------------------------------
 # List of coins to trade. Set to [] to use all coins
 #--------------------------------------------------------------------------------------
@@ -116,22 +130,20 @@ for c in data.columns:
 if ALLOW_SHORTS:
     COLS_Y += ["{}_S".format(y) for y in COLS_Y[1:]]
 #--------------------------------------------------------------------------------------
-# Defining the batch size and test length
-#--------------------------------------------------------------------------------------
-BATCH_SZ_MIN = 100
-BATCH_SZ_MAX = 200
-TEST_LEN     = int(round(0.2*len(data)))
-IDX_MAX      = int(max(0, len(data) - TEST_LEN - BATCH_SZ_MAX - 1))
-#--------------------------------------------------------------------------------------
 # Normalizing the X columns. Scale using training data only
 #--------------------------------------------------------------------------------------
 print("Normalizing Data...", end="")
 for x in COLS_X:
-    median      = data[x].describe()[5]
+    median      = data[SAVE_IDX:][x].describe()[5]
     data[x]     = data[x].apply(lambda x : median if np.isinf(x) or np.isnan(x) else x)
 scaler = sklearn.preprocessing.StandardScaler()
 scaler.fit( data[:IDX_MAX+BATCH_SZ_MAX] [COLS_X] )
 data[COLS_X] = scaler.transform(data[COLS_X])
+if SAVE_MODELS:
+    live_scaler = sklearn.preprocessing.StandardScale()
+    live_scaler.fit( data[SAVE_IDX:] [COLS_X] )
+    save_memory(live_scaler, TRADING_PATH+"/Scaler.save")
+    save_memory(COLS_X, TRADING_PATH+"/COLS_X_ORIG.save")
 print("Done")
 #--------------------------------------------------------------------------------------
 # Apply PCA if set to True. Principle Components calculated using training data only
@@ -146,6 +158,11 @@ if USE_PCA:
     Xs.columns = ["PCA_"+str(x) for x in range(1,len(Xs.columns)+1)]
     data[Xs.columns] = Xs
     COLS_X = list(Xs.columns) + (PORT_W if COMMISSION != 0 else [])
+    
+    if SAVE_MODELS:
+        live_pca = sklearn.decomposition.PCA(PCA_COMPONENTS)
+        live_pca.fit( data[SAVE_IDX:] [COLS_X] )
+        save_memory(live_pca, TRADING_PATH+"/PCA.save")
 
 #    print(PCA_MODEL.explained_variance_)
 #    print(PCA_MODEL.explained_variance_ratio_)
@@ -191,6 +208,10 @@ data["reward_USD"] = 0'''
     
 N_IN  = len(COLS_X)
 N_OUT = len(COLS_Y)
+
+if SAVE_MODELS:
+    save_memory(COLS_X, TRADING_PATH+"/COLS_X.save")
+    save_memory(COLS_Y, TRADING_PATH+"/COLS_Y.save")
 
 #--------------------------------------------------------------------------------------
 #  
@@ -520,3 +541,8 @@ plt.show()
 plt.plot(pd.Series(test_imm.close_BTC / test_imm.close_BTC[0]).apply(lambda x : math.log10(x)),
          pd.Series(log_rewards).cumsum(), 'ob')
 plt.show()
+
+if SAVE_MODELS:
+    answer = input("Do you want to save the Neural Network? (Y/N)")
+    if "Y" in answer.upper():
+        save_memory(sess, TRADING_PATH+"/NN.save")
