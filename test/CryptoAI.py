@@ -30,12 +30,14 @@ def load_memory(path):
 # Read in the price data
 #--------------------------------------------------------------------------------------
 print("Loading Data...", end="")
+# == HACK JOB FOR TESTING SAVE AND TENSORBOARD - start-0 == #
 data_raw = pd.read_csv("M30/ALL.csv").dropna(axis=0, how='any').reset_index(drop=True)
+# == HACK JOB FOR TESTING SAVE AND TENSORBOARD - end-0 == #
 data     = data_raw.drop('date', axis=1)
 data['reward_USD'] = 0
-# == HACK JOB FOR TESTING SAVE AND TENSORBOARD - start == #
+# == HACK JOB FOR TESTING SAVE AND TENSORBOARD - start-1 == #
 data     = data[:5000]  # Sub-set for testing
-# == HACK JOB FOR TESTING SAVE AND TENSORBOARD - end == #
+# == HACK JOB FOR TESTING SAVE AND TENSORBOARD - end-1 == #
 print("{} rows & {} columns".format(len(data), len(data.columns)))
 #--------------------------------------------------------------------------------------
 # Manual Options
