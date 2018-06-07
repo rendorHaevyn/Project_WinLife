@@ -453,7 +453,7 @@ for epoch in range(EPOCH_CNT):
     _, summary = sess.run([train_step,summary_op], feed_dict=train_data)
     # Write logs at every iteration
     writer.add_summary(summary,epoch)
-    if epoch == 0:
+    if epoch <= LOSSCHK_CNT:
         print("Run the command line:\n"
             "--> CD into your python install dir: {}\n"          
             "--> Execute: 'python -m tensorboard.main --logdir={} --host=127.0.0.1 --port=6006'\n"
