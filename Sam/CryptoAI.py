@@ -30,26 +30,29 @@ def save_memory(obj, path):
 def load_memory(path):
     return pickle.load(open(path, "rb"))
 
+cut_off_date = int(time.mktime(time.strptime('01/12/2017', "%d/%m/%Y"))) * 1000
+
 #--------------------------------------------------------------------------------------
 # Read in the price data
 #--------------------------------------------------------------------------------------
 print("Loading Data...", end="")
 data_raw = pd.read_csv("15m/ALL_MOD.csv").dropna(axis=0, how='any').reset_index(drop=True)
-data     = data_raw.drop('date', axis=1)
+data     = data_raw[data_raw.date > cut_off_date].reset_index(drop=True)
+data     = data.drop('date', axis=1)
 data['reward_USD'] = 0
 print("{} rows & {} columns".format(len(data), len(data.columns)))
 #--------------------------------------------------------------------------------------
 # Manual Options
 #--------------------------------------------------------------------------------------
-COMMISSION     = 0.000000003  # Commision % as a decimal to use in loss function
+COMMISSION     = 0.000 # Commision % as a decimal to use in loss function
 USE_PCA        = False   # Use PCA Dimensionality Reduction
 PCA_COMPONENTS = 400     # Number of Principle Components to reduce down to
 USE_SUPER      = False   # Create new features using supervised learning
-INCLUDE_VOLUME = True    # Include Volume as a feature
+INCLUDE_VOLUME = False    # Include Volume as a feature
 ALLOW_SHORTS   = False   # Allow Shorts or not
-DISCOUNT       = False   # Train on discounted rewards
+DISCOUNT       = True   # Train on discounted rewards
 DISCOUNT_STEPS = 24      # Number of periods to look ahead for discounting
-GAMMA          = 0.25    # The discount factor
+GAMMA          = 0.2    # The discount factor
 
 SAVE_MODELS    = True
 TRADING_PATH   = "Live Trading"
@@ -57,7 +60,7 @@ SAVE_LENGTH    = 0.33    # Save all pre-processing models from this percentage o
 #--------------------------------------------------------------------------------------
 # Defining the batch size and test length
 #--------------------------------------------------------------------------------------
-BATCH_SZ_MIN = 1000
+BATCH_SZ_MIN = 100
 BATCH_SZ_MAX = 1000
 TEST_LEN     = int(round(0.2*len(data)))
 IDX_MAX      = int(max(0, len(data) - TEST_LEN - BATCH_SZ_MAX - 1))
@@ -66,10 +69,11 @@ SAVE_IDX     = int(round(SAVE_LENGTH * len(data_raw)))
 # List of coins to trade. Set to [] to use all coins
 #--------------------------------------------------------------------------------------
 COINS       = ['USD', 'BCH', 'BTC', 'DASH', 'EOS', 'ETC', 'ETH', 'IOTA', 'LTC', 'NEO', 'OMG', 'XMR', 'XRP', 'ZEC']
+#COINS = ['USD', 'IOTA', 'EOS']
 # List of coins data to use as input variables. Set to [] to use all coins
 #--------------------------------------------------------------------------------------
 INPUT_COINS = []
-N_CHANNEL   = 3 + (1 if INCLUDE_VOLUME else 0)
+N_CHANNEL   = 3# + (1 if INCLUDE_VOLUME else 0)
 N_COINS     = ( len(COINS) * 2 - 1 ) if ALLOW_SHORTS else len(COINS)
 #--------------------------------------------------------------------------------------
 # Create fields to store "Previous Weights" - Only needed when commission is > 0
@@ -135,19 +139,24 @@ if ALLOW_SHORTS:
 #--------------------------------------------------------------------------------------
 # Normalizing the X columns. Scale using training data only
 #--------------------------------------------------------------------------------------
-'''print("Normalizing Data...", end="")
-for x in COLS_X:
-    median      = data[SAVE_IDX:][x].describe()[5]
-    data[x]     = data[x].apply(lambda x : median if np.isinf(x) or np.isnan(x) else x)
+print("Normalizing Data...", end="")
+#for x in COLS_X:
+    #print("Finding Median: {}".format(x))
+    #median      = data[SAVE_IDX:][x].describe()[5]
+    #print("Applying Median: {}".format(x))
+    #data[x].fillna(median,inplace=True)
+    #data[x]     = data[x].apply(lambda x : median if np.isinf(x) or np.isnan(x) else x)
 scaler = sklearn.preprocessing.StandardScaler()
+print("Fitting Scaler: {}".format(len(COLS_X)))
 scaler.fit( data[:IDX_MAX+BATCH_SZ_MAX] [COLS_X] )
+print("Using Scaler: {}".format(len(COLS_X)))
 data[COLS_X] = scaler.transform(data[COLS_X])
 if SAVE_MODELS:
     live_scaler = sklearn.preprocessing.StandardScaler()
     live_scaler.fit( data[SAVE_IDX:] [COLS_X] )
     save_memory(live_scaler, TRADING_PATH+"/Scaler.save")
     save_memory(COLS_X, TRADING_PATH+"/COLS_X_ORIG.save")
-print("Done")'''
+print("Done")
 #--------------------------------------------------------------------------------------
 # Apply PCA if set to True. Principle Components calculated using training data only
 #--------------------------------------------------------------------------------------
@@ -205,9 +214,9 @@ data = data.dropna(axis=0, how='any').reset_index(drop=True)
 if DISCOUNT:
     data_imm = data_imm[:-DISCOUNT_STEPS]
     
-'''for c in COLS_Y:
-    data[c] = data[c] - math.log10(1.004)
-data["reward_USD"] = 0'''
+#for c in COLS_Y:
+#    data[c] = data[c] - math.log10(1.004)
+#data["reward_USD"] = 0
     
 N_IN  = len(COLS_X)
 N_OUT = len(COLS_Y)
@@ -232,17 +241,19 @@ for x in COLS_X:
         channel_rank = 1
     if "L_HIGH" in x:
         channel_rank = 2
-    if "L_VOLUME" in x:
-        channel_rank = 3
         
     if "L2_LOW" in x:
-        channel_rank = 4
+        channel_rank = 3
     if "L2_CLOSE" in x:
-        channel_rank = 5
+        channel_rank = 4
     if "L2_HIGH" in x:
+        channel_rank = 5
+        
+    if "L_VOLUME" in x:
         channel_rank = 6
     if "L2_VOLUME" in x:
         channel_rank = 7
+        
         
     if "REG_CLOSE" in x:
         channel_rank = 8
@@ -270,8 +281,10 @@ for x in COLS_X:
 N_LAGS    = 20
 X2.sort(key = lambda x : (x[0], x[1], x[2]))
 
-PRICE_TENSOR  = [x[-1] for x in X2 if 0 <= x[2] <= 3]
-PRICE_TENSOR2 = [x[-1] for x in X2 if 4 <= x[2] <= 7]
+VOL_TENSOR  = [x[-1] for x in X2 if 6 <= x[2] <= 6]
+VOL_TENSOR2 = [x[-1] for x in X2 if 7 <= x[2] <= 7]
+PRICE_TENSOR  = [x[-1] for x in X2 if 0 <= x[2] <= 2]
+PRICE_TENSOR2 = [x[-1] for x in X2 if 3 <= x[2] <= 5]
 REG_TENSOR    = [x[-1] for x in X2 if 8 <= x[2] <= 9]
 
 
@@ -288,39 +301,55 @@ Y_     = tf.placeholder(tf.float32, [None, N_OUT])
 
 h_1 = 1
 w_1 = 3
-CH_OUT_1 = 3
+CH_OUT_1 = 6
 FILTER1  = [h_1, w_1, N_CHANNEL, CH_OUT_1] # Filter 1 x 3 x 3, Input has 4 channels
+
+FILTERV = [h_1, w_1, 1, CH_OUT_1]
 
 h_2 = 1
 w_2 = N_LAGS - w_1 + 1
-CH_OUT_2 = 20
-FILTER2  = [h_2, w_2, CH_OUT_1*2, CH_OUT_2]
+CH_OUT_2 = 30
+FILTER2  = [h_2, w_2, CH_OUT_1*4, CH_OUT_2]
 
 h_3 = 1
 w_3 = 1
 CH_OUT_3 = 1
-FILTER3  = [h_3, w_3, CH_OUT_2+1, CH_OUT_3]
+FILTER3  = [h_3, w_3, CH_OUT_2, CH_OUT_3]
 
 SDEV = 1
+
+USE_BIAS = False
+BIAS_MULT = int(USE_BIAS)
 
 X_PRICE_TENSOR  = tf.placeholder(tf.float32, [None, N_COINS-1, N_LAGS, N_CHANNEL])
 X_PRICE_TENSOR2 = tf.placeholder(tf.float32, [None, N_COINS-1, N_LAGS, N_CHANNEL])
 
-CW1 = tf.Variable(tf.random_normal(FILTER1, stddev = SDEV))
-CB1 = tf.Variable(tf.random_normal([CH_OUT_1], stddev = SDEV))
-CL1 = tf.nn.relu(tf.nn.conv2d(X_PRICE_TENSOR, CW1, [1,1,1,1], padding="VALID") + CB1)
+X_VOL_TENSOR  = tf.placeholder(tf.float32, [None, N_COINS-1, N_LAGS, 1])
+X_VOL_TENSOR2 = tf.placeholder(tf.float32, [None, N_COINS-1, N_LAGS, 1])
 
-CW2 = tf.Variable(tf.random_normal(FILTER1, stddev = SDEV))
-CB2 = tf.Variable(tf.random_normal([CH_OUT_1], stddev = SDEV))
-CL2 = tf.nn.relu(tf.nn.conv2d(X_PRICE_TENSOR2, CW2, [1,1,1,1], padding="VALID") + CB2)
+CW1A = tf.Variable(tf.random_normal(FILTER1, stddev = SDEV))
+CB1A = tf.Variable(tf.random_normal([CH_OUT_1], stddev = SDEV))
+CL1A = tf.nn.relu(tf.nn.conv2d(X_PRICE_TENSOR, CW1A, [1,1,1,1], padding="VALID") + CB1A * BIAS_MULT)
 
-CL2 = tf.concat([CL1, CL2], -1)
+CW1B = tf.Variable(tf.random_normal(FILTER1, stddev = SDEV))
+CB1B = tf.Variable(tf.random_normal([CH_OUT_1], stddev = SDEV))
+CL1B = tf.nn.relu(tf.nn.conv2d(X_PRICE_TENSOR2, CW1B, [1,1,1,1], padding="VALID") + CB1B * BIAS_MULT)
+
+CW1C = tf.Variable(tf.random_normal(FILTERV, stddev = SDEV))
+CB1C = tf.Variable(tf.random_normal([CH_OUT_1], stddev = SDEV))
+CL1C = tf.nn.relu(tf.nn.conv2d(X_VOL_TENSOR2, CW1C, [1,1,1,1], padding="VALID") + CB1C * BIAS_MULT)
+
+CW1D = tf.Variable(tf.random_normal(FILTERV, stddev = SDEV))
+CB1D = tf.Variable(tf.random_normal([CH_OUT_1], stddev = SDEV))
+CL1D = tf.nn.relu(tf.nn.conv2d(X_VOL_TENSOR2, CW1D, [1,1,1,1], padding="VALID") + CB1D * BIAS_MULT)
+
+CL2 = tf.concat([CL1A, CL1B, CL1C, CL1D], -1)
 # Shape is N_COINS x (LAGS - 2) x 6
 
 CW3 = tf.Variable(tf.random_normal(FILTER2, stddev = SDEV))
 CB3 = tf.Variable(tf.random_normal([CH_OUT_2], stddev = SDEV))
-CL3A = tf.nn.relu(tf.nn.conv2d(CL2, CW3, [1,1,1,1], padding="VALID") + CB3)
-CL3 = tf.concat([CL3A, tf.reshape(PREV_W[:,1:], (-1,N_COINS-1,1,1))], -1)
+CL3 = tf.nn.relu(tf.nn.conv2d(CL2, CW3, [1,1,1,1], padding="VALID") + CB3 * BIAS_MULT)
+#CL3 = tf.concat([CL3, tf.reshape(PREV_W[:,1:], (-1,N_COINS-1,1,1))], -1)
 # Shape is N_COINS x 1 x 30
 
 CW4 = tf.Variable(tf.random_normal(FILTER3, stddev = SDEV))
@@ -330,13 +359,13 @@ CL4 = tf.reshape( CL4A, (-1, N_COINS-1) )
 fc_w = tf.Variable(tf.random_normal([N_COINS-1, N_OUT], stddev = SDEV))
 fc_b = tf.Variable(tf.random_normal([N_OUT], stddev = SDEV))
 
-Y_scores = tf.nn.relu(tf.matmul(CL4, fc_w) + fc_b)
+Y_scores = tf.nn.relu(tf.matmul(CL4, fc_w) + fc_b * BIAS_MULT)
 Y = tf.nn.softmax(Y_scores)
 
-lambda_reg = 0.00001
+#lambda_reg = 0.00001
 
-reg_losses = tf.nn.l2_loss(CW1) + tf.nn.l2_loss(CW2) + tf.nn.l2_loss(CW3)
-reg_losses += tf.nn.l2_loss(CW4)
+reg_losses = tf.nn.l2_loss(CW1A) + tf.nn.l2_loss(CW1B) + tf.nn.l2_loss(CW1C) + tf.nn.l2_loss(CW1D)
+reg_losses += tf.nn.l2_loss(CW3) + tf.nn.l2_loss(CW4) + tf.nn.l2_loss(fc_w)
 
 #USD_BIAS = tf.Variable(tf.random_normal([1], stddev = SDEV))
 #CL5 = tf.concat([USD_BIAS, CL4], axis=0)
@@ -366,11 +395,11 @@ B3 = tf.Variable(tf.random_normal([M], stddev = SDEV))
 W4 = tf.Variable(tf.random_normal([M, N_OUT], stddev = SDEV))
 B4 = tf.Variable(tf.random_normal([N_OUT], stddev = SDEV))
 
-reg_losses =  tf.nn.l2_loss(W1) + tf.nn.l2_loss(W2) + tf.nn.l2_loss(W3)
-reg_losses += tf.nn.l2_loss(B1) + tf.nn.l2_loss(B2) + tf.nn.l2_loss(B3)
+#reg_losses =  tf.nn.l2_loss(W1) + tf.nn.l2_loss(W2) + tf.nn.l2_loss(W3)
+#reg_losses += tf.nn.l2_loss(B1) + tf.nn.l2_loss(B2) + tf.nn.l2_loss(B3)
 
 # Magic number is around 0.0001
-lambda_reg = 0.0
+lambda_reg = 0.0002
 
 #--------------------------------------------------------------------------------------
 # Define Computation Graph
@@ -379,11 +408,11 @@ lambda_reg = 0.0
 # Activation function for final layer is Softmax for portfolio weights in the range [0,1]
 H1  = tf.nn.relu(tf.matmul(X,  W1) + B1)
 DH1 = tf.nn.dropout(H1, 0.9)
-H2  = tf.nn.relu(tf.matmul(DH1, W2) + B2)
+H2  = tf.nn.relu(tf.matmul(H1, W2) + B2)
 DH2 = tf.nn.dropout(H2, 0.9)
-H3  = tf.nn.relu(tf.matmul(DH2, W3) + B3)
-DH3 = tf.nn.dropout(H2, 0.9)
-Y   = tf.nn.softmax(tf.matmul(DH3, W4) + B4)
+H3  = tf.nn.relu(tf.matmul(H2, W3) + B3)
+DH3 = tf.nn.dropout(H3, 0.9)
+#Y   = tf.nn.softmax(tf.matmul(H3, W4) + B4)
 #Y_MAX = tf.sign(Y - tf.reduce_max(Y,axis=1,keep_dims=True)) + 1
 #--------------------------------------------------------------------------------------
 # Define Loss Function
@@ -392,12 +421,12 @@ if COMMISSION == 0:
     weight_moves = tf.reduce_mean(tf.reduce_sum(tf.abs(Y[1:] - Y[:-1]), axis=1))
     tensor_rwds = tf.log (10**tf.reduce_sum(Y * Y_, axis=1) )
     reward      = tf.reduce_sum(tensor_rwds)
-    loss        = -tf.reduce_mean( tensor_rwds ) + tf.log(weight_moves)*0.0002 + lambda_reg * reg_losses
+    loss        = -tf.reduce_mean( tensor_rwds ) + lambda_reg * reg_losses
 else:
     weight_moves = tf.reduce_mean(tf.reduce_sum(tf.abs(Y[1:] - Y[:-1]), axis=1))
     tensor_rwds = tf.log (tf.reduce_sum( ( 1-COMMISSION*tf.abs(Y-PREV_W) ) * (Y * 10**Y_), axis=1))
     reward      = tf.reduce_sum( tensor_rwds )
-    loss        = -tf.reduce_mean( tensor_rwds )# + lambda_reg * reg_losses
+    loss        = -tf.reduce_mean( tensor_rwds ) + lambda_reg * reg_losses
 
 tf.summary.scalar("loss",loss)
 #tf.summary.scalar("tensor_rwds",[tensor_rwds])
@@ -409,8 +438,8 @@ learning_rate = tf.train.exponential_decay(starter_learning_rate, global_step,
                                        1, 0.97, staircase=True)
 
 LR_START = 0.001
-LR_END   = 0.00005
-LR_DECAY = 0.99999
+LR_END   = 0.00000001
+LR_DECAY = 0.999
 current_lr = LR_START
 
 # Optimizer
@@ -449,7 +478,7 @@ writer = tf.summary.FileWriter(LOG_PATH,graph=tf.get_default_graph()) #sess.grap
 dat_rwds, imm_rwds, dat_losses, imm_losses = [], [], [], []
 print("Begin Learning...")
 #---------------------------------------------------------------------------------------------------
-for epoch in range(10000):
+for epoch in range(100000):
     
     new_lr = max(LR_DECAY**epoch*LR_START, LR_END)
     
@@ -464,8 +493,10 @@ for epoch in range(10000):
             test_imm.at[0,PORT_W] = prev_weights[-1]
             b_x = np.reshape(test_dat[COLS_X], (-1,N_IN))
             b_y = np.reshape(test_dat[COLS_Y], (-1,N_OUT))
-            pr_tens1 = np.reshape(np.array(b_x[PRICE_TENSOR]), (len(b_x), N_COINS-1, N_LAGS, N_CHANNEL))
-            pr_tens2 = np.reshape(np.array(b_x[PRICE_TENSOR2]),(len(b_x), N_COINS-1, N_LAGS, N_CHANNEL))
+            pr_tens1 = np.reshape(np.array(test_dat[PRICE_TENSOR]), (-1, N_COINS-1, N_LAGS, N_CHANNEL))
+            pr_tens2 = np.reshape(np.array(test_dat[PRICE_TENSOR2]),(-1, N_COINS-1, N_LAGS, N_CHANNEL))
+            v_tens1 = np.reshape(np.array(test_dat[VOL_TENSOR]), (-1, N_COINS-1, N_LAGS, 1))
+            v_tens2 = np.reshape(np.array(test_dat[VOL_TENSOR2]),(-1, N_COINS-1, N_LAGS, 1))
             #---------------------------------------------------------
             for r in range(len(test_dat) - 1):
 
@@ -477,7 +508,11 @@ for epoch in range(10000):
                             
                             X_PRICE_TENSOR  : pr_tens1[r].reshape(-1,N_COINS-1,N_LAGS,N_CHANNEL),
                             
-                            X_PRICE_TENSOR2 : pr_tens2[r].reshape(-1,N_COINS-1,N_LAGS,N_CHANNEL)
+                            X_PRICE_TENSOR2 : pr_tens2[r].reshape(-1,N_COINS-1,N_LAGS,N_CHANNEL),
+                            
+                            X_VOL_TENSOR  : v_tens1[r].reshape(-1,N_COINS-1,N_LAGS,1),
+                            
+                            X_VOL_TENSOR2 : v_tens2[r].reshape(-1,N_COINS-1,N_LAGS,1)
                             }
                                                
                 weights, y_vec  = sess.run([Y, Y_], feed_dict=feed_row)
@@ -499,7 +534,13 @@ for epoch in range(10000):
                                         (-1, N_COINS-1, N_LAGS, N_CHANNEL)),
                             
                         X_PRICE_TENSOR2 : np.reshape(np.array(test_dat[PRICE_TENSOR2]), \
-                                        (-1, N_COINS-1, N_LAGS, N_CHANNEL))
+                                        (-1, N_COINS-1, N_LAGS, N_CHANNEL)),
+                                                     
+                        X_VOL_TENSOR  : np.reshape(np.array(test_dat[VOL_TENSOR]), \
+                                        (-1, N_COINS-1, N_LAGS, 1)),
+                            
+                        X_VOL_TENSOR2 : np.reshape(np.array(test_dat[VOL_TENSOR2]), \
+                                        (-1, N_COINS-1, N_LAGS, 1))
                         }
                                    
             feed_imm = {X:  np.reshape(test_imm[COLS_X], (-1, N_IN)), 
@@ -510,7 +551,45 @@ for epoch in range(10000):
                                         (-1, N_COINS-1, N_LAGS, N_CHANNEL)),
                             
                         X_PRICE_TENSOR2 : np.reshape(np.array(test_imm[PRICE_TENSOR2]), 
-                                        (-1, N_COINS-1, N_LAGS, N_CHANNEL))
+                                        (-1, N_COINS-1, N_LAGS, N_CHANNEL)),
+                                        
+                        X_VOL_TENSOR  : np.reshape(np.array(test_imm[VOL_TENSOR]), \
+                                        (-1, N_COINS-1, N_LAGS, 1)),
+                            
+                        X_VOL_TENSOR2 : np.reshape(np.array(test_imm[VOL_TENSOR2]), \
+                                        (-1, N_COINS-1, N_LAGS, 1))
+                        }
+        else:
+            feed_dat = {X:  np.reshape(test_dat[COLS_X], (-1, N_IN)), 
+                        Y_: np.reshape(test_dat[COLS_Y], (-1, N_OUT)),
+                        
+                        X_PRICE_TENSOR  : np.reshape(np.array(test_dat[PRICE_TENSOR]), \
+                                        (-1, N_COINS-1, N_LAGS, N_CHANNEL)),
+                            
+                        X_PRICE_TENSOR2 : np.reshape(np.array(test_dat[PRICE_TENSOR2]), \
+                                        (-1, N_COINS-1, N_LAGS, N_CHANNEL)),
+                                                     
+                        X_VOL_TENSOR  : np.reshape(np.array(test_dat[VOL_TENSOR]), \
+                                        (-1, N_COINS-1, N_LAGS, 1)),
+                            
+                        X_VOL_TENSOR2 : np.reshape(np.array(test_dat[VOL_TENSOR2]), \
+                                        (-1, N_COINS-1, N_LAGS, 1))
+                        }
+                                   
+            feed_imm = {X:  np.reshape(test_imm[COLS_X], (-1, N_IN)), 
+                        Y_: np.reshape(test_imm[COLS_Y], (-1, N_OUT)),
+                        
+                        X_PRICE_TENSOR  : np.reshape(np.array(test_imm[PRICE_TENSOR]), 
+                                        (-1, N_COINS-1, N_LAGS, N_CHANNEL)),
+                            
+                        X_PRICE_TENSOR2 : np.reshape(np.array(test_imm[PRICE_TENSOR2]), 
+                                        (-1, N_COINS-1, N_LAGS, N_CHANNEL)),
+                                                     
+                        X_VOL_TENSOR  : np.reshape(np.array(test_imm[VOL_TENSOR]), \
+                                        (-1, N_COINS-1, N_LAGS, 1)),
+                            
+                        X_VOL_TENSOR2 : np.reshape(np.array(test_imm[VOL_TENSOR2]), \
+                                        (-1, N_COINS-1, N_LAGS, 1))
                         }
         d_rwd, d_loss = sess.run([reward, loss], feed_dict=feed_dat)
         i_rwd, i_loss = sess.run([reward, loss], feed_dict=feed_imm)
@@ -529,7 +608,7 @@ for epoch in range(10000):
     sub_data = data.iloc[idx:idx+batch_sz, :].reset_index(drop=True)
     #sub_data = data.iloc[IDX_MAX:,:].reset_index(drop=True)
     #sub_data = sub_data.sample(batch_sz).reset_index(drop=True)
-    sub_data = test_dat
+    #sub_data = test_dat
     batch_X, batch_Y = (sub_data[COLS_X], sub_data[COLS_Y])
     
     if COMMISSION != 0:
@@ -542,6 +621,8 @@ for epoch in range(10000):
         b_y = np.reshape(batch_Y, (-1,N_OUT))
         pr_tens1 = np.reshape(np.array(b_x[PRICE_TENSOR]), (len(b_x), N_COINS-1, N_LAGS, N_CHANNEL))
         pr_tens2 = np.reshape(np.array(b_x[PRICE_TENSOR2]),(len(b_x), N_COINS-1, N_LAGS, N_CHANNEL))
+        v_tens1 = np.reshape(np.array(b_x[VOL_TENSOR]), (-1, N_COINS-1, N_LAGS, 1))
+        v_tens2 = np.reshape(np.array(b_x[VOL_TENSOR2]),(-1, N_COINS-1, N_LAGS, 1))
         for r in range(len(batch_X) - 1):
             if random.random() < 0.03:
                 rand = np.random.random(N_OUT)
@@ -557,7 +638,11 @@ for epoch in range(10000):
                             
                             X_PRICE_TENSOR  : pr_tens1[r].reshape(-1,N_COINS-1,N_LAGS,N_CHANNEL),
                             
-                            X_PRICE_TENSOR2 : pr_tens2[r].reshape(-1,N_COINS-1,N_LAGS,N_CHANNEL)
+                            X_PRICE_TENSOR2 : pr_tens2[r].reshape(-1,N_COINS-1,N_LAGS,N_CHANNEL),
+                            
+                            X_VOL_TENSOR  : v_tens1[r].reshape(-1,N_COINS-1,N_LAGS,1),
+                            
+                            X_VOL_TENSOR2 : v_tens2[r].reshape(-1,N_COINS-1,N_LAGS,1)
                             }
                 weights, y_vec  = sess.run([Y, Y_], feed_dict=feed_row)
                 w = (weights * 10** y_vec) / np.sum(weights * 10 ** y_vec)
@@ -573,7 +658,14 @@ for epoch in range(10000):
                                         (-1, N_COINS-1, N_LAGS, N_CHANNEL)),
                             
                       X_PRICE_TENSOR2 : np.reshape(np.array(batch_X[PRICE_TENSOR2]), \
-                                        (-1, N_COINS-1, N_LAGS, N_CHANNEL))
+                                        (-1, N_COINS-1, N_LAGS, N_CHANNEL)),
+                                                   
+                      X_VOL_TENSOR  : np.reshape(np.array(batch_X[VOL_TENSOR]), \
+                                        (-1, N_COINS-1, N_LAGS, 1)),
+                            
+                      X_VOL_TENSOR2 : np.reshape(np.array(batch_X[VOL_TENSOR2]), \
+                                        (-1, N_COINS-1, N_LAGS, 1))
+                                        
                       }
         
     else:
@@ -584,35 +676,32 @@ for epoch in range(10000):
                                         (-1, N_COINS-1, N_LAGS, N_CHANNEL)),
                             
                       X_PRICE_TENSOR2 : np.reshape(np.array(batch_X[PRICE_TENSOR2]), \
-                                        (-1, N_COINS-1, N_LAGS, N_CHANNEL))
+                                        (-1, N_COINS-1, N_LAGS, N_CHANNEL)),
+                                                   
+                      X_VOL_TENSOR  : np.reshape(np.array(batch_X[VOL_TENSOR]), \
+                                        (-1, N_COINS-1, N_LAGS, 1)),
+                            
+                      X_VOL_TENSOR2 : np.reshape(np.array(batch_X[VOL_TENSOR2]), \
+                                        (-1, N_COINS-1, N_LAGS, 1))
                       }
         
     #_, summary = sess.run([train_step,summary_op], feed_dict=train_data)
     #a_rwd = sess.run(reward, feed_dict=train_data)
-    #step = sess.run(train_step, feed_dict=train_data)
+    step, r_wd = sess.run([train_step,reward], feed_dict=train_data)
     #a_rwd2 = sess.run(reward, feed_dict=train_data)
     #print("Epoch {:<12} Reward: {:<12.6f} ---> {:<12.6f}".format(epoch, a_rwd, a_rwd2))
     #writer.add_summary(summary,epoch)
     
     # === Tensorboard - start-2 === #
      # Run optimization / cost op (backprop / to get loss value) and summary nodes
-    _, summary = sess.run([train_step,summary_op], feed_dict=train_data)
+    #_, summary = sess.run([train_step,summary_op], feed_dict=train_data)
     # Write logs at every iteration
-    writer.add_summary(summary,epoch)
-    if epoch <= 10:
-        print("Run the command line:\n"
-            "--> CD into your python install dir: {}\n"          
-            "--> Execute: 'python -m tensorboard.main --logdir={} --host=127.0.0.1 --port=6006'\n"
-            "Then open http://127.0.0.1:6006/ into your web browser".format(
-                os.path.dirname(sys.executable)
-                ,os.path.dirname(os.path.abspath( "__file__" )) + os.sep + LOG_PATH)
-            )
-    # === Tensorboard - end-2 === #
+
     
     
     update_lr = tf.assign(LEARNING_RATE, new_lr)
     sess.run(update_lr)
-    print("Learning Rate: {}".format(new_lr))
+    #print("Learning Rate: {}, reward: {}".format(new_lr, math.exp(r_wd)))
 #---------------------------------------------------------------------------------------------------
 
 plt.plot(dat_rwds)
@@ -723,7 +812,7 @@ for i in range(len(y2)):
         w[i][j] = max(w[i][j],0)
         
     if i % STEP == 0:
-        cw = [x for x in w[i]]hi
+        cw = [x for x in w[i]]
         
     rw     = 0    # Reward for this time step
 
