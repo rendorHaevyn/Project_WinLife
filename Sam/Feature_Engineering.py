@@ -39,6 +39,28 @@ for C in COINS:
     print("Feature Engineering {}".format(C))
     df['reward_'+C] = df['close_'+C].shift(-1) / df['close_'+C]
     df['reward_'+C] = df["reward_"+C].apply(lambda x : math.log10(x))
+    
+    cut_low = 0.95
+    cut_high = 1.05
+
+    limits = []
+    for i in range(len(df)):
+        cls = df.at[i, 'close_'+C]
+        appended = False
+        for j in range(i+1,len(df)):
+            if df.at[j, 'low_'+C] / cls <= cut_low:
+                limits.append(math.log10(cut_low))
+                appended = True
+                break
+            if df.at[j, 'high_'+C] / cls >= cut_high:
+                limits.append(math.log10(cut_high))
+                appended = True
+                break
+        if not appended:
+            limits.append(0)
+    
+    df['limit_'+C] = limits
+        
 
     print("{}: LAGS".format(C))
     for col_type in ['L_CLOSE', 'L_HIGH', 'L_LOW', 'L_VOLUME']:
@@ -103,7 +125,7 @@ for C in COINS:
             except Exception as err:
                 print("error is ", err, idx1, idx2, df.ix[idx1,'close_'+C])
                 coefs.append(np.nan)
-        df["L_REG_CLOSE_{}".format(i+1)] = coefs
+        df["L_REG_CLOSE_{}_{}".format(i+1, C)] = coefs
 
     all_close_coefs = []
     all_vol_coefs = []
