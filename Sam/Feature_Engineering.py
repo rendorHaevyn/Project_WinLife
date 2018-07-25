@@ -18,11 +18,14 @@ import traceback
 import pandas as pd
 import Constants
 
-N_LAGS = 20
+N_LAGS = 30
 TIME_FRAME = Constants.TF_15M
 TF_IN_MINS = Constants.TF_TO_MIN[TIME_FRAME]
 
 df = pd.read_csv("{}/ALL.csv".format(TIME_FRAME))
+
+cut_off_date = int(time.mktime(time.strptime('01/12/2017', "%d/%m/%Y"))) * 1000
+#df = df[df['date'] > cut_off_date].reset_index(drop=True)
 
 COINS = [x[len("close_"):] for x in df.columns if "close_" in x]
 
@@ -32,11 +35,15 @@ COINS = [x[len("close_"):] for x in df.columns if "close_" in x]
 SHIFT_POINTS_HOURS = [24, 12, 4, 2, 1]
 REG_HOURS          = [24, 12, 4, 2, 1]
 
+#SHIFT_POINTS_HOURS = []
+#REG_HOURS          = []
+
 L2_SCALE = 5
 
 for C in COINS:
     
     print("Feature Engineering {}".format(C))
+    df['volume_'+C] = df['volume_'+C] * df['close_'+C]
     df['reward_'+C] = df['close_'+C].shift(-1) / df['close_'+C]
     df['reward_'+C] = df["reward_"+C].apply(lambda x : math.log10(x))
     
@@ -61,7 +68,6 @@ for C in COINS:
     
     df['limit_'+C] = limits
         
-
     print("{}: LAGS".format(C))
     for col_type in ['L_CLOSE', 'L_HIGH', 'L_LOW', 'L_VOLUME']:
         
@@ -73,10 +79,12 @@ for C in COINS:
                 col = 'low'
             if col_type == 'L_VOLUME':
                 col = 'volume'
-                
-            df["{}_{}_{}".format(col_type, lag, C)] = df[col+"_"+C].shift((lag)) / \
-            df['close_'+C if col_type != 'L_VOLUME'+C else 'volume_'+C]
-            
+
+            if col_type == "L_VOLUME":
+                df["{}_{}_{}".format(col_type, lag, C)] = df["volume_"+C].shift((lag))
+                #df["{}_{}_{}".format(col_type, lag, C)] = df[col+"_"+C].shift((lag)) / df['volume_'+C]
+            else:
+                df["{}_{}_{}".format(col_type, lag, C)] = df[col+"_"+C].shift((lag)) / df['close_'+C]
             df["{}_{}_{}".format(col_type, lag, C)] = df["{}_{}_{}".format(col_type, lag, C)].apply(lambda x : math.log10(x))
             
     print("{}: LAGS2".format(C))
@@ -90,9 +98,21 @@ for C in COINS:
                 col = 'low'
             if col_type == 'L2_VOLUME':
                 col = 'volume'
-                
-            df["{}_{}_{}".format(col_type, lag, C)] = df[col+"_"+C].shift((L2_SCALE*lag)) / \
-            df['close_'+C if col_type != 'L_VOLUME'+C else 'volume_'+C]
+
+            if col_type == "L2_VOLUME":
+                stmt = "df['{}_{}_{}'.format(col_type, lag, C)] = "
+                for x in range(L2_SCALE):
+                    stmt += "df['volume_'+C].shift((L2_SCALE*lag)-{}){}".format(x, "" if x == L2_SCALE-1 else "+")
+                exec(stmt)
+                #df["{}_{}_{}".format(col_type, lag, C)] = df["volume_"+C].shift((L2_SCALE*lag))
+                #df["{}_{}_{}".format(col_type, lag, C)] = df["volume_"+C].shift((L2_SCALE*lag)) / df['volume_'+C]
+            else:
+                stmt = "df['{}_{}_{}'.format(col_type, lag, C)] = "
+                for x in range(L2_SCALE):
+                    stmt += "df['{}_'+C].shift((L2_SCALE*lag)-{}){}".format(col, x, "" if x == L2_SCALE-1 else "+")
+                exec(stmt)
+                df['{}_{}_{}'.format(col_type, lag, C)] = df['{}_{}_{}'.format(col_type, lag, C)] / L2_SCALE
+                df['{}_{}_{}'.format(col_type, lag, C)] = df['{}_{}_{}'.format(col_type, lag, C)] / df['close_'+C]
             
             df["{}_{}_{}".format(col_type, lag, C)] = df["{}_{}_{}".format(col_type, lag, C)].apply(lambda x : math.log10(x))
     
