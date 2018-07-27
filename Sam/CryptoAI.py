@@ -30,7 +30,7 @@ def save_memory(obj, path):
 def load_memory(path):
     return pickle.load(open(path, "rb"))
 
-cut_off_date = int(time.mktime(time.strptime('01/01/2018', "%d/%m/%Y"))) * 1000
+#cut_off_date = int(time.mktime(time.strptime('01/01/2018', "%d/%m/%Y"))) * 1000
 
 #--------------------------------------------------------------------------------------
 # Read in the price data
@@ -49,10 +49,10 @@ USE_PCA        = False   # Use PCA Dimensionality Reduction
 PCA_COMPONENTS = 400     # Number of Principle Components to reduce down to
 USE_SUPER      = False   # Create new features using supervised learning
 INCLUDE_VOLUME = True    # Include Volume as a feature
-ALLOW_SHORTS   = False   # Allow Shorts or not
+ALLOW_SHORTS   = True   # Allow Shorts or not
 DISCOUNT       = False   # Train on discounted rewards
 DISCOUNT_STEPS = 24      # Number of periods to look ahead for discounting
-GAMMA          = 0.5    # The discount factor
+GAMMA          = 0.75    # The discount factor
 
 SAVE_MODELS    = True
 TRADING_PATH   = "Live Trading"
@@ -60,15 +60,15 @@ SAVE_LENGTH    = 0.33    # Save all pre-processing models from this percentage o
 #--------------------------------------------------------------------------------------
 # Defining the batch size and test length
 #--------------------------------------------------------------------------------------
-BATCH_SZ_MIN = 1000
-BATCH_SZ_MAX = 1000
+BATCH_SZ_MIN = 50
+BATCH_SZ_MAX = 50
 TEST_LEN     = int(round(0.25*len(data)))
 IDX_MAX      = int(max(0, len(data) - TEST_LEN - BATCH_SZ_MAX - 1))
 SAVE_IDX     = int(round(SAVE_LENGTH * len(data_raw)))
 #--------------------------------------------------------------------------------------
 # List of coins to trade. Set to [] to use all coins
 #--------------------------------------------------------------------------------------
-COINS       = ['USD', 'BCH', 'BTC', 'DASH', 'EOS', 'ETC', 'ETH', 'IOTA', 'LTC', 'NEO', 'OMG', 'XMR', 'XRP', 'ZEC']
+COINS       = ['USD', 'BCH', 'BTC', 'ETH', 'IOTA']
 #COINS = ['USD', 'IOTA', 'EOS']
 # List of coins data to use as input variables. Set to [] to use all coins
 #--------------------------------------------------------------------------------------
@@ -299,26 +299,25 @@ Y_     = tf.placeholder(tf.float32, [None, N_OUT])
 # Define hidden layers
 #--------------------------------------------------------------------------------------
 
-h_1 = 1
-w_1 = 5
-CH_OUT_1 = 9
-FILTER1  = [h_1, w_1, N_CHANNEL, CH_OUT_1] # Filter 1 x 3 x 3, Input has 4 channels
+h_1         = 1
+w_1         = 3
+CH_OUT_1    = 1
+FILTER1     = [h_1, w_1, N_CHANNEL, CH_OUT_1] # Filter 1 x 3 x 3, Input has 4 channels
 
-FILTERV = [h_1, w_1, 1, CH_OUT_1]
+FILTERV     = [h_1, w_1, 1, CH_OUT_1]
 
-h_2 = 1
-w_2 = N_LAGS - w_1 + 1
-CH_OUT_2 = 80
-FILTER2  = [h_2, w_2, CH_OUT_1*3, CH_OUT_2]
+h_2         = 1
+w_2         = N_LAGS - w_1 + 1
+CH_OUT_2    = 4
+FILTER2     = [h_2, w_2, CH_OUT_1*1, CH_OUT_2]
 
-h_3 = 1
-w_3 = 1
-CH_OUT_3 = 1
-FILTER3  = [h_3, w_3, CH_OUT_2, CH_OUT_3]
+h_3         = 1
+w_3         = 1
+CH_OUT_3    = 1
+FILTER3     = [h_3, w_3, CH_OUT_2, CH_OUT_3]
 
-SDEV = 1
-
-BIAS_MULT = 1
+SDEV        = 1
+BIAS_MULT   = 0
 
 X_PRICE_TENSOR  = tf.placeholder(tf.float32, [None, N_COINS-1, N_LAGS, N_CHANNEL])
 X_PRICE_TENSOR2 = tf.placeholder(tf.float32, [None, N_COINS-1, N_LAGS, N_CHANNEL])
@@ -326,10 +325,14 @@ X_PRICE_TENSOR2 = tf.placeholder(tf.float32, [None, N_COINS-1, N_LAGS, N_CHANNEL
 X_VOL_TENSOR  = tf.placeholder(tf.float32, [None, N_COINS-1, N_LAGS, 1])
 X_VOL_TENSOR2 = tf.placeholder(tf.float32, [None, N_COINS-1, N_LAGS, 1])
 
+#CW1Z = tf.Variable(tf.random_normal([N_COINS-1,2,N_CHANNEL,N_CHANNEL], stddev = SDEV))
+#CB1Z = tf.Variable(tf.random_normal([N_CHANNEL], stddev = SDEV))
+#CL1Z = tf.nn.relu(tf.nn.conv2d(X_PRICE_TENSOR, CW1Z, [1,1,1,1], padding="SAME") + CB1Z * BIAS_MULT)
+
 CW1A = tf.Variable(tf.random_normal(FILTER1, stddev = SDEV))
 CB1A = tf.Variable(tf.random_normal([CH_OUT_1], stddev = SDEV))
 CL1A = tf.nn.relu(tf.nn.conv2d(X_PRICE_TENSOR, CW1A, [1,1,1,1], padding="VALID") + CB1A * BIAS_MULT)
-
+'''
 CW1B = tf.Variable(tf.random_normal(FILTER1, stddev = SDEV))
 CB1B = tf.Variable(tf.random_normal([CH_OUT_1], stddev = SDEV))
 CL1B = tf.nn.relu(tf.nn.conv2d(X_PRICE_TENSOR2, CW1B, [1,1,1,1], padding="VALID") + CB1B * BIAS_MULT)
@@ -338,15 +341,21 @@ CW1C = tf.Variable(tf.random_normal(FILTERV, stddev = SDEV))
 CB1C = tf.Variable(tf.random_normal([CH_OUT_1], stddev = SDEV))
 CL1C = tf.nn.relu(tf.nn.conv2d(X_VOL_TENSOR, CW1C, [1,1,1,1], padding="VALID") + CB1C * BIAS_MULT)
 
-#CW1D = tf.Variable(tf.random_normal(FILTERV, stddev = SDEV))
-#CB1D = tf.Variable(tf.random_normal([CH_OUT_1], stddev = SDEV))
-#CL1D = tf.nn.relu(tf.nn.conv2d(X_VOL_TENSOR2, CW1D, [1,1,1,1], padding="VALID") + CB1D * BIAS_MULT)
+CW1D = tf.Variable(tf.random_normal(FILTERV, stddev = SDEV))
+CB1D = tf.Variable(tf.random_normal([CH_OUT_1], stddev = SDEV))
+CL1D = tf.nn.relu(tf.nn.conv2d(X_VOL_TENSOR2, CW1D, [1,1,1,1], padding="VALID") + CB1D * BIAS_MULT)'''
 
 #CL2 = tf.concat([CL1A, CL1B, CL1C, CL1D], -1)
 #CL2 = tf.concat([CL1A, CL1B, CL1C], -1)
-CL2 = tf.concat([tf.nn.batch_normalization(CL1A, 0, 1, None, None, 1e-6),\
-                 tf.nn.batch_normalization(CL1B, 0, 1, None, None, 1e-6),\
-                 tf.nn.batch_normalization(CL1C, 0, 1, None, None, 1e-6)], -1)
+
+#tf_mean = tf.Variable(0.0)
+#tf_var  = tf.Variable(1.0)
+#CL2 = tf.nn.batch_normalization(CL1A, tf_mean, tf_var, None, None, variance_epsilon=1e-6)
+
+CL2 = CL1A
+#CL2 = tf.concat([tf.nn.batch_normalization(CL1A, tf_mean1, tf_var1, None, None, 1e-6),\
+#                 tf.nn.batch_normalization(CL1B, tf_mean2, tf_var2, None, None, 1e-6),
+#                 tf.nn.batch_normalization(CL1C, tf_mean3, tf_var3, None, None, 1e-6)], -1)
 # Shape is N_COINS x (LAGS - 2) x 6
 
 CW3 = tf.Variable(tf.random_normal(FILTER2, stddev = SDEV))
@@ -359,36 +368,36 @@ CW4 = tf.Variable(tf.random_normal(FILTER3, stddev = SDEV))
 CL4A = tf.nn.relu(tf.nn.conv2d(CL3, CW4, [1,1,1,1], padding="SAME"))
 CL4 = tf.reshape( CL4A, (-1, N_COINS-1) )
 
-tf_mean = tf.Variable(0.0)
-tf_var  = tf.Variable(1.0)
-CL4 = tf.nn.batch_normalization(CL4, tf_mean, tf_var, None, None, variance_epsilon=1e-6)
+#tf_mean = tf.Variable(0.0)
+#tf_var  = tf.Variable(1.0)
+#CL4 = tf.nn.batch_normalization(CL4, tf_mean, tf_var, None, None, variance_epsilon=1e-6)
 
-fc_w = tf.Variable(tf.random_normal([N_COINS-1, N_OUT], stddev = SDEV), trainable=False)
-fc_b = tf.Variable(tf.random_normal([N_OUT], stddev = SDEV), trainable=False)
+fc_w = tf.Variable(tf.random_normal([N_COINS-1, N_OUT], stddev = SDEV), trainable=True)
+fc_b = tf.Variable(tf.random_normal([N_OUT], stddev = SDEV), trainable=True)
 
-Y_scores = tf.matmul(CL4, fc_w)# + fc_b * BIAS_MULT
+cnn_keep_prob = tf.Variable(0.85, trainable=False)
+fc_w_dropped = tf.nn.dropout(fc_w, cnn_keep_prob)
+
+Y_scores = tf.matmul(CL4, fc_w_dropped)# + fc_b * BIAS_MULT
 Y = tf.nn.softmax(Y_scores)
 
-#lambda_reg = 0.00001
+cnn_lambda_reg = 0.00000001
 
-reg_losses = tf.nn.l2_loss(CW1A) + tf.nn.l2_loss(CW1B) + tf.nn.l2_loss(CW1C)# + tf.nn.l2_loss(CW1D)
-reg_losses += tf.nn.l2_loss(CW3) + tf.nn.l2_loss(CW4) + tf.nn.l2_loss(fc_w)
+#reg_losses = tf.nn.l2_loss(CW1A) + tf.nn.l2_loss(CW1B) + tf.nn.l2_loss(CW1C)# + tf.nn.l2_loss(CW1D)
+#reg_losses += tf.nn.l2_loss(CW3) + tf.nn.l2_loss(CW4) + tf.nn.l2_loss(fc_w)
 
-if BIAS_MULT == 1:
-    reg_losses += tf.nn.l2_loss(CB1A) + tf.nn.l2_loss(CB1B) + tf.nn.l2_loss(CB1C) + tf.nn.l2_loss(CB1D)
-    reg_losses += tf.nn.l2_loss(CB3)# + tf.nn.l2_loss(fc_b)
+reg_losses = tf.nn.l2_loss(CW1A) + tf.nn.l2_loss(CW3) + tf.nn.l2_loss(CW4) + 4*tf.nn.l2_loss(fc_w)
 
 #USD_BIAS = tf.Variable(tf.random_normal([1], stddev = SDEV))
 #CL5 = tf.concat([USD_BIAS, CL4], axis=0)
 #Y2  = tf.nn.softmax(CL4)
 # Shape is N_COINS x 1 x 30
-
+'''
 # Define number of Neurons per layer
 K = 100 # Layer 1
 L = 100 # Layer 2
 M = 100 # Layer 3
 N = 100 # Layer 4
-
 
 # LAYER 1
 W1 = tf.Variable(tf.random_normal([N_IN, K], stddev = SDEV))
@@ -406,11 +415,11 @@ B3 = tf.Variable(tf.random_normal([M], stddev = SDEV))
 W4 = tf.Variable(tf.random_normal([M, N_OUT], stddev = SDEV))
 B4 = tf.Variable(tf.random_normal([N_OUT], stddev = SDEV))
 
-reg_losses =  tf.nn.l2_loss(W1) + tf.nn.l2_loss(W2) + tf.nn.l2_loss(W3)
-reg_losses += tf.nn.l2_loss(B1) + tf.nn.l2_loss(B2) + tf.nn.l2_loss(B3)
+#reg_losses =  tf.nn.l2_loss(W1) + tf.nn.l2_loss(W2) + tf.nn.l2_loss(W3)
+#reg_losses += tf.nn.l2_loss(B1) + tf.nn.l2_loss(B2) + tf.nn.l2_loss(B3)
 
 # Magic number is around 0.0001
-lambda_reg = 1e-9
+lambda_reg = 0.000001
 
 #--------------------------------------------------------------------------------------
 # Define Computation Graph
@@ -426,8 +435,8 @@ bn_dev  = tf.Variable(1.0)
 DH2 = tf.nn.batch_normalization(DH2, bn_mean, bn_dev, None, None, 1e-6)
 H3  = tf.nn.relu(tf.matmul(DH2, W3) + B3)
 DH3 = tf.nn.dropout(H3, 0.85)
-Y   = tf.nn.softmax(tf.matmul(DH3, W4) + B4)
-#Y_MAX = tf.sign(Y - tf.reduce_max(Y,axis=1,keep_dims=True)) + 1
+#Y   = tf.nn.softmax(tf.matmul(DH3, W4) + B4)
+#Y_MAX = tf.sign(Y - tf.reduce_max(Y,axis=1,keep_dims=True)) + 1'''
 #--------------------------------------------------------------------------------------
 # Define Loss Function
 #--------------------------------------------------------------------------------------
@@ -435,7 +444,7 @@ if COMMISSION == 0:
     weight_moves = tf.reduce_mean(tf.reduce_sum(tf.abs(Y[1:] - Y[:-1]), axis=1))
     tensor_rwds = tf.log (10**tf.reduce_sum(Y * Y_, axis=1) )
     reward      = tf.reduce_sum(tensor_rwds)
-    loss        = -tf.reduce_mean( tensor_rwds ) + lambda_reg * reg_losses
+    loss        = -tf.reduce_mean( tensor_rwds ) + cnn_lambda_reg * reg_losses
 else:
     weight_moves = tf.reduce_mean(tf.reduce_sum(tf.abs(Y[1:] - Y[:-1]), axis=1))
     tensor_rwds = tf.log (tf.reduce_sum( ( 1-COMMISSION*tf.abs(Y-PREV_W) ) * (Y * 10**Y_), axis=1))
@@ -446,10 +455,9 @@ tf.summary.scalar("loss",loss)
 #tf.summary.scalar("tensor_rwds",[tensor_rwds])
 summary_op = tf.summary.merge_all()
 
-LR_START = 0.001
+LR_START = 0.0001
 LR_END   = 0.00005
 LR_DECAY = 0.999
-current_lr = LR_START
 
 # Optimizer
 LEARNING_RATE = tf.Variable(LR_START)
@@ -492,7 +500,10 @@ for epoch in range(100000):
     new_lr = max(LR_DECAY**epoch*LR_START, LR_END)
     
     # Measure loss on validation set every 100 epochs
-    if epoch % 100 == 0:
+    if epoch % 20 == 0:
+        
+        update_drop_rt = tf.assign(cnn_keep_prob, 1)
+        sess.run(update_drop_rt)
         
         if COMMISSION != 0:
             prev_weights = [[1 if idx == 0 else 0 for idx in range(N_OUT)]]
@@ -610,11 +621,14 @@ for epoch in range(100000):
               (epoch, dat_losses[-1], dat_losses[-1], dat_rwds[-1], imm_rwds[-1]))
 
     #-----------------------------------------------------------------
+    
+    update_drop_rt = tf.assign(cnn_keep_prob, 0.99 + 0.01 * random.random())
+    sess.run(update_drop_rt)
         
-    idx      = int(round(random.random()**0.8*IDX_MAX))
+    idx      = int(round(random.random()**0.5*IDX_MAX))
     batch_sz = random.randint(BATCH_SZ_MIN, BATCH_SZ_MAX)
     sub_data = data.iloc[idx:idx+batch_sz, :].reset_index(drop=True)
-    #sub_data = data.iloc[:IDX_MAX,:]
+    sub_data = data.iloc[:IDX_MAX,:]
     #sub_data = data.iloc[IDX_MAX:,:].reset_index(drop=True)
     #sub_data = sub_data.sample(batch_sz).reset_index(drop=True)
     #sub_data = test_dat
@@ -696,7 +710,7 @@ for epoch in range(100000):
         
     #_, summary = sess.run([train_step,summary_op], feed_dict=train_data)
     #a_rwd = sess.run(reward, feed_dict=train_data)
-    step, r_wd, lss = sess.run([train_step,reward,loss], feed_dict=train_data)
+    step, r_wd, lss, reg_lss = sess.run([train_step,reward,loss,reg_losses], feed_dict=train_data)
     #a_rwd2 = sess.run(reward, feed_dict=train_data)
     #print("Epoch {:<12} Reward: {:<12.6f} ---> {:<12.6f}".format(epoch, a_rwd, a_rwd2))
     #writer.add_summary(summary,epoch)
@@ -707,12 +721,29 @@ for epoch in range(100000):
     # Write logs at every iteration
     
     
-    print("Epoch: {:<10} LR: {:<12.8f} Loss: {:<12.8f} Rwd: {:<12.8f}".format(epoch, new_lr, lss, math.exp(r_wd)))
-
+    print("Epoch: {:<10} LR: {:<12.8f} Loss: {:<12.8f} Rwd: {:<12.8f}".format(epoch, reg_lss, lss, math.exp(r_wd)))
+    #update_lr = tf.assign(LEARNING_RATE, new_lr)
+    #sess.run(update_lr)
     
+    if epoch == 0:
+        update_lr = tf.assign(LEARNING_RATE, 0.01)
+        sess.run(update_lr)
     
-    update_lr = tf.assign(LEARNING_RATE, new_lr)
-    sess.run(update_lr)
+    if epoch == 100:
+        update_lr = tf.assign(LEARNING_RATE, 0.003)
+        sess.run(update_lr)
+    
+    if epoch == 200:
+        update_lr = tf.assign(LEARNING_RATE, 0.001)
+        sess.run(update_lr)
+    
+    if epoch == 300:
+        update_lr = tf.assign(LEARNING_RATE, 0.0001)
+        sess.run(update_lr)
+    
+    #update_lr = tf.assign(LEARNING_RATE, new_lr)
+    #sess.run(update_lr)
+    
     #print("Learning Rate: {}, reward: {}".format(new_lr, math.exp(r_wd)))
 #---------------------------------------------------------------------------------------------------
 
@@ -720,6 +751,9 @@ plt.plot(dat_rwds)
 plt.plot(imm_rwds)
 plt.legend(['Discount Test Reward', 'Actual Test Reward'], loc=4)
 plt.show()
+
+update_drop_rt = tf.assign(cnn_keep_prob, 1)
+sess.run(update_drop_rt)
 
 if COMMISSION != 0:
     prev_weights = [[1 if idx == 0 else 0 for idx in range(N_OUT)]]
