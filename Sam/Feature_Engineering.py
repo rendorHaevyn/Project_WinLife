@@ -28,6 +28,7 @@ cut_off_date = int(time.mktime(time.strptime('01/12/2017', "%d/%m/%Y"))) * 1000
 #df = df[df['date'] > cut_off_date].reset_index(drop=True)
 
 COINS = [x[len("close_"):] for x in df.columns if "close_" in x]
+COINS = ['BCH', 'BTC', 'ETH', 'IOTA']
 
 #SHIFT_POINTS_HOURS = [24 * 14, 24 * 7, 24 * 3, 24, 12, 4, 2, 1]
 #REG_HOURS          = [24 * 14, 24 * 7, 24 * 3, 24, 12, 4, 2, 1]
