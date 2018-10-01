@@ -166,9 +166,19 @@ K = 20 # Layer 1
 L = 10 # Layer 2
 M =  5 # Layer 2
 
-N_IN  = 20 # 10 unique cards for player, and 10 for dealer = 20 total inputs
+# Option to use binary states of the form 
+#[Soft/Hard, total==2, total==3, total==4...total==31]. 
+# Player can never have total <= 4, dealer can never have total >= 27 
+# -> Length = 55
+USE_BINARY_STATES = True
+
+if USE_BINARY_STATES:
+    N_IN = 55
+else:
+    N_IN = 20 # 10 unique cards for player, and 10 for dealer = 20 total inputs
+    
 N_OUT = 2
-SDEV  = 0.000001
+SDEV  = 0.01
 
 # Input / Output place holders
 X = tf.placeholder(tf.float32, [None, N_IN])
@@ -251,8 +261,21 @@ for ep in range(num_eps):
     # Keep looping until the episode is not over
     while True:
         
-        # x is the array of 20 numbers. The player cards, and the dealer cards.
-        x = cardsToX(game.player) + cardsToX(game.dealer)
+        if USE_BINARY_STATES:
+            
+            pstate, ptotal = Blackjack.getTotal(game.player)
+            dstate, dtotal = Blackjack.getTotal(game.dealer)
+            
+            x                  = [0] * N_IN
+            x[0]               = int(pstate == "S")
+            x[ptotal - 1 - 2]  = 1
+            x[29]              = int(dstate == "S")
+            x[29 + dtotal - 1] = 1
+
+        else:
+            
+            # x is the array of 20 numbers. The player cards, and the dealer cards.
+            x = cardsToX(game.player) + cardsToX(game.dealer)
 
         # Q1 refers to the predicted Q-values before any action was taken
         Q1 = sess.run(Q_PREDICT, feed_dict = {X : np.reshape( np.array(x), (-1, N_IN) )})
@@ -272,8 +295,6 @@ for ep in range(num_eps):
         # Get game state before action is taken
         game_state = game.getState()
         
-        
-        
         # Take action! Observe new state, reward, and if the game is over
         game_state_new, reward, done, _ = game.step(act)
         
@@ -281,7 +302,22 @@ for ep in range(num_eps):
         
         # Store the new state vector to feed into our network. 
         # x2 corresponds to the x vector observed in state s+1
-        x2 = cardsToX(game.player) + cardsToX(game.dealer)
+        
+        if USE_BINARY_STATES:
+            
+            pstate, ptotal = Blackjack.getTotal(game.player)
+            dstate, dtotal = Blackjack.getTotal(game.dealer)
+            
+            x2                  = [0] * N_IN
+            x2[0]               = int(pstate == "S")
+            x2[ptotal - 1 - 2]  = 1
+            x2[29]              = int(dstate == "S")
+            x2[29 + dtotal - 1] = 1
+            
+        else:
+            
+            # x is the array of 20 numbers. The player cards, and the dealer cards.
+            x2 = cardsToX(game.player) + cardsToX(game.dealer)
 
         # Q2 refers to the predicted Q-values in the new s+1 state. This is used for the 'SARSA' update.
         Q2 = sess.run(Q_PREDICT,feed_dict = {X : np.reshape( np.array(x2), (-1, N_IN) )})
