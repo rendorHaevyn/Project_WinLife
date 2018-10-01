@@ -173,9 +173,19 @@ K = 20 # Layer 1
 L = 10 # Layer 2
 M =  5 # Layer 2
 
-N_IN  = 20 # 10 unique cards for player, and 10 for dealer = 20 total inputs
+# Option to use binary states of the form 
+#[Soft/Hard, total==2, total==3, total==4...total==31]. 
+# Player can never have total <= 4, dealer can never have total >= 27 
+# -> Length = 55
+USE_BINARY_STATES = True
+
+if USE_BINARY_STATES:
+    N_IN = 55
+else:
+    N_IN = 20 # 10 unique cards for player, and 10 for dealer = 20 total inputs
+    
 N_OUT = 2
-SDEV  = 0.000001
+SDEV  = 0.01
 
 # Input / Output place holders
 X = tf.placeholder(tf.float32, [None, N_IN])
@@ -251,7 +261,7 @@ hands       = [] # Holds a summary of all hands played. (game_state, Q[stand], Q
 use_argmax  = True 
 
 import nn_arch_1
-nn = nn_arch_1.nn(20, 2)
+nn = nn_arch_1.nn(N_IN, N_OUT)
 nn.initialise_nn()
 
 eta = 0.0001
@@ -260,8 +270,22 @@ gamma = 1
 
 game.reset()
 
-# x is the array of 20 numbers. The player cards, and the dealer cards.
-x = cardsToX(game.player) + cardsToX(game.dealer)
+if USE_BINARY_STATES:
+            
+        pstate, ptotal = Blackjack.getTotal(game.player)
+        dstate, dtotal = Blackjack.getTotal(game.dealer)
+
+        x                  = [0] * N_IN
+        x[0]               = int(pstate == "S")
+        x[ptotal - 1 - 2]  = 1
+        x[29]              = int(dstate == "S")
+        x[29 + dtotal - 1] = 1
+
+    else:
+
+        # x is the array of 20 numbers. The player cards, and the dealer cards.
+        x = cardsToX(game.player) + cardsToX(game.dealer)
+        
 q = nn.output_nn(x)
 
 if use_argmax:
@@ -293,7 +317,22 @@ for ep in range(num_eps):
         # Take action! Observe new state, reward, and if the game is over
         game_state_new, reward, done, _ = game.step(act)
         
-        x = cardsToX(game.player) + cardsToX(game.dealer)
+        if USE_BINARY_STATES:
+            
+            pstate, ptotal = Blackjack.getTotal(game.player)
+            dstate, dtotal = Blackjack.getTotal(game.dealer)
+            
+            x                  = [0] * N_IN
+            x[0]               = int(pstate == "S")
+            x[ptotal - 1 - 2]  = 1
+            x[29]              = int(dstate == "S")
+            x[29 + dtotal - 1] = 1
+
+        else:
+            
+            # x is the array of 20 numbers. The player cards, and the dealer cards.
+            x = cardsToX(game.player) + cardsToX(game.dealer)
+            
         act = np.argmax(q)      
         if random.random() < epsilon:
             # action is selected randomly
