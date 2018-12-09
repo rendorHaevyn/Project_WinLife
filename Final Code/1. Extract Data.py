@@ -1,27 +1,20 @@
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-import math
-import time
-import random
-import gc
+import os
 import sys
-import re
-import itertools
+import time
 import threading
-import pickle
 import copy
 
 import ccxt # pip install ccxt
 import Constants
 
-msec     = 1000
-minute   = 60 * msec
-hold     = 30
+EXPORT_PATH = "Data/Crypto"
 
 # Choose time-frame to extract data. Available TimeFrames are stored in "Constants.py"
-timeframe = Constants.TF_15M
-TimeStep  = minute * Constants.TF_TO_MIN[timeframe]
+timeframe = Constants.TF_5M
+TimeStep  = Constants.TF_TO_MS[timeframe]
 
 # List of Exchanges to extract data from
 bitfinex    = ccxt.bitfinex({'rateLimit' : 2500,'enableRateLimit' : True,'verbose': False})
@@ -50,9 +43,9 @@ def getData(exchange,           # ccxt exchange as input
     datasets[exch_name] = {}
     
     start_time      = exchange.milliseconds()
-    TimeStep        = minute * Constants.TF_TO_MIN[timeframe] # Number of Milliseconds for one time step
+    TimeStep        = Constants.TF_TO_MS[timeframe]           # Number of Milliseconds for one time step
     from_datetime   = '2018-01-01 00:00:00'                   # YYYY-MM-DD Extract data as far back as this date
-    EARLIEST        = exchange.parse8601(from_datetime)       # Convert the string-readable date time to a unix time-stamp
+    EARLIEST        = int(exchange.parse8601(from_datetime))  # Convert the string-readable date time to a unix time-stamp
     n_data          = (start_time - EARLIEST) // TimeStep     # Stores the expected number of rows of the final extract
     
     buffer = 5 # Move our next starting point slightly forward, to ensure we capture all data
@@ -61,9 +54,9 @@ def getData(exchange,           # ccxt exchange as input
     # Iterate through all coins needed to extract
     for i, coin in enumerate(sorted(coins)):
         
-        
         coin_name   = coin.replace("/", "") # ccxt format guarantees that "/" is in the coin name so this is fine for all exchanges
-        since_time  = exchange.milliseconds() - TimeStep * (LIMIT-buffer)
+        since_time  = max(exchange.milliseconds() - TimeStep * (LIMIT - buffer), EARLIEST)
+        since_time  = int(since_time)
         
         # OKEX exchange does not allow the "limit" parameter, so we need to explicitly handle it differently
         if type(exchange) is ccxt.okex:
@@ -81,14 +74,14 @@ def getData(exchange,           # ccxt exchange as input
             # Need this loop in-case we get an exception, we only break this loop if the query goes through successfully
             while True:
                 
+                starting_time = int(since_time - TimeStep * (LIMIT-buffer))
+                
                 try:
                     # since_time is moved back by the Limit - buffer, again to guarantee that all data is picked up without gaps
                     if type(exchange) is ccxt.okex:
-                        d2 = exchange.fetchOHLCV(coin, timeframe, since = (since_time - TimeStep * (LIMIT-buffer)),
-                                             params=params)
+                        d2 = exchange.fetchOHLCV(coin, timeframe, since = starting_time, params=params)
                     else:
-                        d2 = exchange.fetchOHLCV(coin, timeframe, since = (since_time - TimeStep * (LIMIT-buffer)), limit=LIMIT,
-                                             params=params)
+                        d2 = exchange.fetchOHLCV(coin, timeframe, since = starting_time, limit=LIMIT, params=params)
                     break
                 
                 except KeyboardInterrupt:
@@ -122,16 +115,16 @@ def getData(exchange,           # ccxt exchange as input
                 print("{:<6} - {}: {} / {}".format(exch_name, coin_name, len(data), n_data))
                 break
             else:
-                new_since  = max( min([x[0] for x in d2]), EARLIEST)
+                new_since  = int(max( min([x[0] for x in d2]), EARLIEST))
                 # starting time didnt move, so no reason to keep extracting
                 if since_time == new_since:
                     print("Same Since Time - Breaking, {} {}".format(exch_name, coin_name))
                     break
-                since_time = new_since
+                since_time = int(new_since)
                 
             print("{:<6} - {}: {} / {}".format(exch_name, coin_name, len(data), n_data))
         #--------------------------------------------------------------------
-        # Data extract finished!    
+        # Data extract finished!
         
         # rename the columns -> Each columns is prefixed by the exchange name, followed by the coin name without the "/"
         data.columns = ['date', 'open_{}{}'.format(exch_name, coin_name), 
@@ -183,7 +176,7 @@ for k, v in extract_dict.items():
     
     # GDAX exchange requires the 'granularity' parameter - should be set to the equivalent number of seconds of 1 time-step
     if type(Exchange) is ccxt.gdax:
-        p = {'granularity' : TimeStep//1000}
+        params = {'granularity' : int( TimeStep//1000) }
         
     threads.append( threading.Thread( target=getData, args=(Exchange, k, Limit, timeframe, Coin, params) ) )
     threads[-1].start()
@@ -194,9 +187,12 @@ for t in threads:
 # Refer to the all_data dictionary that was built within each thread, and join each dataset together for our final data
 finalData = None
 for k in extract_dict:
+    if k not in all_data:
+        print(k, "is missing in dict")
+        continue
     if finalData is None:
         finalData = all_data[k]
-    else:
+    elif k in all_data:
         finalData = finalData.merge(all_data[k], 'inner', 'date')
         
 # Remove the very last record from the data - there will duplicates in this due to live-data 
@@ -205,7 +201,16 @@ finalData = finalData[finalData.date < max(finalData.date)]
 # Again, make sure data is sorted, and reset the index
 finalData = finalData.drop_duplicates().sort_values('date').reset_index(drop=True)
 
+try:
+    os.mkdir("{}/{}".format(EXPORT_PATH, timeframe))
+except FileExistsError as e1:
+    pass
+except OSError as e2:
+    print('Failed to create directory {} - Incorrect syntax?'.format(timeframe))
+except:
+    print('Error occurred - {}.'.format(sys.exc_info()[0]))
+            
 # Output final data
-finalData.to_csv("combined/{}/ALL.csv".format(timeframe), index=False)
+finalData.to_csv("{}/{}/ALL.csv".format(EXPORT_PATH, timeframe), index=False)
 # Done!
 print(finalData)
