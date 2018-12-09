@@ -16,6 +16,7 @@ def load_memory(path):
     return pickle.load(open(path, "rb"))
 
 
+SAVE_PATH = "C:\CryptoAI\SavedModel"
 COMMISSION = 0.003
 
 TF_1D  = "1d"
@@ -59,9 +60,21 @@ TF_TO_MIN = {"1d"  : 1440,
              "5m"  : 5,
              "1m"  : 1}
 
-TF_TO_HOUR = dict([(TF, MINS / 60.0) for TF, MINS in TF_TO_MIN.items()])
-TF_TO_SEC = dict([(TF, MINS * 60) for TF, MINS in TF_TO_MIN.items()])
+TF_TO_HOUR = { TF : MINS / 60.0 for TF, MINS in TF_TO_MIN.items() }
+TF_TO_SEC  = { TF : MINS * 60.0 for TF, MINS in TF_TO_MIN.items() }
+TF_TO_MS   = { TF : SEC * 1000  for TF, SEC in TF_TO_SEC.items() }
 
+# Easy way to convert Q values into weighted decision probabilities via softmax.
+# This is useful if we probablistically choose actions based on their values rather
+# than always choosing the max.
+
+# eg Q[s,0] = -1
+#    Q[s,1] = -2
+#    softmax([-1,-2]) = [0.731, 0.269] --> 73% chance of standing, 27% chance of hitting
+def softmax(x):
+    """Compute softmax values for each sets of scores in x."""
+    e_x = np.exp(x - np.max(x))
+    return e_x / e_x.sum()
 
 class Stopwatch:
     
