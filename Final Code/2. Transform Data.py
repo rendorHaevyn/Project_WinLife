@@ -10,6 +10,7 @@ import time
 import random
 import imp
 import gc
+import os
 import sys
 import re
 import math
@@ -19,31 +20,48 @@ import Constants
 import gc
 import threading
 
-
 N_LAGS = 10 # Choose number of lags to look back. The size of the data scales linearly with this single number
 TIME_FRAME = Constants.TF_5M
 TF_IN_MINS = Constants.TF_TO_MIN[TIME_FRAME]
 
+IS_FOREX = False
+
 # Load in the un-transformed data
-main_data    = pd.read_csv("combined/{}/ALL.csv".format(TIME_FRAME))
+EXPORT_PATH = "Data/Crypto"
+main_data    = pd.read_csv("{}/{}/ALL.csv".format(EXPORT_PATH, TIME_FRAME))
 
 # Use this as an easy way to truncate the data from a certain date. Less data means faster processing!
-cut_off_date = int(time.mktime(time.strptime('01/12/2017', "%d/%m/%Y"))) * 1000
+cut_off_date = int(time.mktime(time.strptime('01/4/2018', "%d/%m/%Y"))) * 1000
 main_data    = main_data[main_data['date'] > cut_off_date].reset_index(drop=True)
 
 # Any column with a "close_" will be followed by the name of the coin. 
 # Find all the coins that are in the data and store them as a list
 COINS = [x[len("close_"):] for x in main_data.columns if "close_" in x]
 # Manual override to only load selected coins that you want
-#COINS = ['BMXBTCUSD', 'GDXBTCUSD', 'BFXBTCUSDT', 'BINBTCUSDT']
+COINS = ["BMXBTCUSD", "BFXBTCUSDT", "BINBTCUSDT", "GDXBTCUSD", "BFXXRPUSDT", "BINETHUSDT"]
+
+
+if IS_FOREX:
+    denoms = {}
+    denoms["AUD"] = np.repeat(1, len(main_data))
+    for C in COINS:
+        if C.endswith("AUD"):
+            denoms[C[:3]] = main_data["close_"+C]
+        elif C[:3] == "AUD":
+            scaler = 100 if C.endswith("JPY") else 1
+            denoms[C[-3:]] = scaler / main_data["close_"+C]
+    
+    for C in COINS:
+        main_data['pipcost_'+C] = denoms[C[-3:]]
+
 
 COINS = sorted(COINS)
 
-L_SCALES        = [3, 6]        # Mulitpliers for the far reaching lag features
-MA_PERIODS      = [20, 60, 200] # Periods for the Moving Average Features
-RSI_PERIODS     = [20, 60, 200] # Periods for the RSI Features
-MIN_MAX_PERIODS = [20, 60, 200] # Periods for the Support / Resistance Features
-REG_LOOKS       = [12, 24, 96]  # Periods for the Linear Regression Features
+L_SCALES        = [3, 6]    # Mulitpliers for the far reaching lag features
+MA_PERIODS      = [5, 10, 20, 30, 50] # Periods for the Moving Average Features
+RSI_PERIODS     = [5, 10, 20, 30, 50] # Periods for the RSI Features
+MIN_MAX_PERIODS = [15] # Periods for the Support / Resistance Features
+REG_LOOKS       = [6, 12, 18]  # Periods for the Linear Regression Features
 
 # Dictionary that will store the 
 finished_data = {}
@@ -77,8 +95,13 @@ def TransformData(C):
     df = main_data[['date'] + [x for x in main_data.columns if x.endswith(C)]].reset_index(drop=True)
     
     print("Feature Engineering {}".format(C))
-    df['reward_'+C] = df['close_'+C].shift(-1) / df['close_'+C]
-    df['reward_'+C] = df["reward_"+C].apply(lambda x : math.log10(x)) # Returns are log base 10
+    
+    if IS_FOREX:
+        scaler = 100 if "JPY" in C else 10000
+        df['reward_'+C] = scaler * (df['close_'+C].shift(-1) - df['close_'+C]) * df['pipcost_'+C]
+    else:
+        df['reward_'+C] = df['close_'+C].shift(-1) / df['close_'+C]
+        df['reward_'+C] = df["reward_"+C].apply(lambda x : math.log10(x)) # Returns are log base 10
     
     # Alternative reward using stop & limits. This may come in handy as a different trading strategy
     #------------------------------------------------------
@@ -87,14 +110,14 @@ def TransformData(C):
     cut_high = 1.05
     limits = []
     for i in range(len(df)):
-        cls = df.at[i, 'close_'+C]
+        close_price = df.at[i, 'close_'+C]
         appended = False
         for j in range(i+1,len(df)):
-            if df.at[j, 'low_'+C] / cls <= cut_low:
+            if df.at[j, 'low_'+C] / close_price <= cut_low:
                 limits.append(math.log10(cut_low))
                 appended = True
                 break
-            if df.at[j, 'high_'+C] / cls >= cut_high:
+            if df.at[j, 'high_'+C] / close_price >= cut_high:
                 limits.append(math.log10(cut_high))
                 appended = True
                 break
@@ -129,14 +152,14 @@ def TransformData(C):
             
             # Store the cumnulative lagged returns
             elif col_type == "L_RET":
-                df["{}_{}_{}".format(col_type, lag+1, C)] = df["close_"+C].shift(lag) / df["close_"+C].shift(N_LAGS+1)
+                df["{}_{}_{}".format(col_type, lag+1, C)] = df["close_"+C].shift(lag) / df["close_"+C].shift(N_LAGS)
             
             # Store the price movement multiplied by the volume
             elif col_type == "L_VOLPRICE":
                 df['vol_mean'] = df["volume_"+C].shift(lag).rolling(center=False,window=50).mean()
-                df['vol_std'] = df["volume_"+C].shift(lag).rolling(center=False,window=50).std()
+                df['vol_std']  = df["volume_"+C].shift(lag).rolling(center=False,window=50).std()
                 df["{}_{}_{}".format(col_type, lag+1, C)] = (df["close_"+C].shift(lag) / df["close_"+C].shift(lag+1)) - 1
-                df["{}_{}_{}".format(col_type, lag+1, C)] = df["{}_{}_{}".format(col_type, lag+1, C)] * ( df["volume_"+C] / (df['vol_mean']+df['vol_std']) )
+                df["{}_{}_{}".format(col_type, lag+1, C)] = df["{}_{}_{}".format(col_type, lag+1, C)] * ( df["volume_"+C].shift(lag) / (df['vol_mean']+df['vol_std']) )
             
             # Store High/Low divided by the closing price of the same lag
             else:
@@ -179,11 +202,21 @@ def TransformData(C):
                     df['{}_{}_{}'.format(col_type, lag+1, C)] = (df['{}_{}_{}'.format(col_type, lag+1, C)] / scaler) / df['close_'+C] 
     
     #------------------------------------------------------
-    print("{}: MOVS".format(C))
+    print("{}: SMA_CLOSE".format(C))
     # Calculate each Moving Average feature
     for i, MA in enumerate(MA_PERIODS):
         for lag in range(N_LAGS-1, -1, -1):
-                df["{}_{}_{}".format("MOV{}".format(i+1), lag+1, C)] = df["close_"+C].shift(lag) / df["close_"+C].shift(lag).rolling(center=False,window=MA).mean()
+                df["{}_{}_{}".format("SMACLOSE{}".format(i+1), lag+1, C)] = df["close_"+C].shift(lag) / df["close_"+C].shift(lag).rolling(center=False,window=MA).mean()
+    print("{}: SMA_LOW".format(C))
+    # Calculate each Moving Average feature
+    for i, MA in enumerate(MA_PERIODS):
+        for lag in range(N_LAGS-1, -1, -1):
+                df["{}_{}_{}".format("SMALOW{}".format(i+1), lag+1, C)] = df["close_"+C].shift(lag) / df["low_"+C].shift(lag).rolling(center=False,window=MA).mean()
+    print("{}: SMA_HIGH".format(C))
+    # Calculate each Moving Average feature
+    for i, MA in enumerate(MA_PERIODS):
+        for lag in range(N_LAGS-1, -1, -1):
+                df["{}_{}_{}".format("SMAHIGH{}".format(i+1), lag+1, C)] = df["close_"+C].shift(lag) / df["high_"+C].shift(lag).rolling(center=False,window=MA).mean()
     #------------------------------------------------------
     print("{}: RSI".format(C))
     # Calculate each Relative Strength Index (RSI) feature
@@ -217,6 +250,7 @@ def TransformData(C):
     threads     = []
     
     def calcReg(index, LB):
+        
          for row_n in range(len(df)):
             
             idx1 = row_n - LB
@@ -224,7 +258,7 @@ def TransformData(C):
                 coef_lists[index].append(np.nan)
                 continue
             else:
-                reg_data = df.ix[(idx1+1):(row_n+1),'close_'+C] / df.ix[idx1,'close_'+C]
+                reg_data = df.ix[(idx1+1):(row_n),'close_'+C] / df.ix[idx1,'close_'+C]
                 reg_data = reg_data.apply(lambda x : math.log10(x))
                 coeff = np.linalg.lstsq(np.reshape(range(len(reg_data)), (-1, 1)), reg_data)[0]
                 coef_lists[index].append(coeff[0]) # Keep the coefficent in front of 'time' only
@@ -240,13 +274,13 @@ def TransformData(C):
     for i, coef_list in enumerate(coef_lists):
         for lag in range(N_LAGS-1, -1, -1):
             df["{}_{}_{}".format("LINEAR{}".format(i+1), lag+1, C)] = pd.Series(coef_list).shift(lag)
-            
-    finished_data[C] = df
     
     # Clean up memory
     gc.collect()
     # Done Transforming this coin!
     print("{} finished processing!".format(C))
+    
+    finished_data[C] = df
     #------------------------------------------------------     
     
 # Run a thread per coin - Much faster!
@@ -278,13 +312,13 @@ for c, v in sorted(finished_data.items()):
         
 # This is just some Forex renaming - we cant have any number in the column name, as we use that to determine
 # what lag # we are on in the modelling phase
-rename_maps = {"GER30" : "GER",
+rename_maps = {"GER30"  : "GER",
                "NAS100" : "NAS",
                "AUS200" : "ASX",
-               "US30" : "US",
+               "US30"   : "US",
                "SPX500" : "SPX",
-               "UK100" : "UK",
-               "FRA40" : "FRA"}
+               "UK100"  : "UK",
+               "FRA40"  : "FRA"}
 
 cols = []
 for c in finalData.columns:
@@ -300,4 +334,14 @@ finalData.columns = cols
 # Start exporting the data!
 print("Exporting {} rows, {} columns...".format(len(finalData), len(cols)))
 # Done!
-finalData.to_csv("combined/{}/{}.csv".format(TIME_FRAME, "ALL_MOD"), index=False)
+
+try:
+    os.mkdir("{}/{}".format(EXPORT_PATH, TIME_FRAME))
+except FileExistsError as e1:
+    pass
+except OSError as e2:
+    print('Failed to create directory {} - Incorrect syntax?'.format(TIME_FRAME))
+except:
+    print('Error occurred - {}.'.format(sys.exc_info()[0]))
+    
+finalData.to_csv("{}/{}/ALL_MOD.csv".format(EXPORT_PATH, TIME_FRAME), index=False)
